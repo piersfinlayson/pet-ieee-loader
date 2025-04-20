@@ -58,7 +58,7 @@ old_irq:
 
 ; Entry point
 init:
-    ; Save original IRQ vector
+    ; Save original IRQ vector (in old_irq)
     LDA $0090
     STA old_irq
     LDA $0091
@@ -74,6 +74,9 @@ init:
     ; Don't bother settings UB16_PORT_A to 0xFF - this sets DI pins to inputs.
     ; This is done by the KERNAL on boot, so already set.
 
+    ; Clear the interrupt by reading the data port
+    LDA UB16_PORT_A     ; Read data port (clears CA1 interrupt flag)
+
     ; Configure UB16 PIA for ATN interrupts - preserve other bits
     ; - Set bit 7 (1): Enable CA1 interrupts
     ; - Set bit 1 (1): CA1 negative edge triggering (since ATN is active low)
@@ -87,8 +90,24 @@ init:
 
 ; ATN Interrupt Handler - Entry point when ATN line goes active
 atn_handler:
-    ; Save registers
+    ; Save accumulator
     PHA
+
+    ; Test if ATN caused the interrupt
+    LDA REG_ATN_IN      ; Read control register A
+    AND #MASK_ATN_IN    ; Mask for ATN interrupt flag (bit 7)
+    BNE atn             ; If bit is high, ATN caused interrupt
+    
+    PLA                 ; Restore accumulator
+    JMP (old_irq)       ; Jump to original handler
+
+atn:
+    ; Note that A has already been pushed to the stack
+
+    ; Clear the interrupt by reading the data port
+    LDA UB16_PORT_A     ; Read data port (clears CA1 interrupt flag)
+
+    ; Save other registers
     TXA
     PHA
     TYA

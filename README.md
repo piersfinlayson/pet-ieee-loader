@@ -27,9 +27,15 @@ A lightweight utility that turns your Commodore PET into an IEEE-488 device, all
 
 1. Compile the program using the provided Makefile:
    ```bash
-   sudo apt-get -y install cc65 make
+   sudo apt-get -y install cc65 make vice
    make
    ```
+
+   This creates:
+    ```bash
+    build/pet-ieee-loader.prg  # The PET program in PRG format
+    build/pet-ieee-loader.d64  # A D64 disk image containing the program 
+    ```
 
 2. Transfer the resulting binary (`build/pet-ieee-loader.bin`) to your PET using:
    - A physical disk/tape
@@ -39,7 +45,7 @@ A lightweight utility that turns your Commodore PET into an IEEE-488 device, all
 
 3. On the PET, you can load the program from disk:
     ```basic
-    LOAD "PET-IEEE-LOADER",8,1
+    LOAD "IEEE-LOADER",8,1
     ```
 
 ## 🚀Usage
