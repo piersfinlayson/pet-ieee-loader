@@ -28,8 +28,8 @@ SENDER_RELEASE = $(SENDER_DIR)/target/release/sender
 
 # Default target
 .PHONY: all
-loader: $(PRG_FILE) $(D64_FILE)
 all: loader sender
+loader: $(PRG_FILE) $(D64_FILE)
 
 # Create build directory
 $(BUILD_DIR):
