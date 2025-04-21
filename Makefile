@@ -9,16 +9,16 @@ C1541 = c1541
 CA65_FLAGS = -I src
 
 # Directories
-BUILD_DIR = build
-SRC_DIR = src
+LOADER_SRC_DIR = loader
+BUILD_DIR = $(LOADER_SRC_DIR)/build
 
 # Files
 LOADER_PREFIX = pet-ieee-loader
-SRC_FILE = $(SRC_DIR)/$(LOADER_PREFIX).s
+SRC_FILE = $(LOADER_SRC_DIR)/$(LOADER_PREFIX).s
 OBJ_FILE = $(BUILD_DIR)/$(LOADER_PREFIX).o
 PRG_FILE = $(BUILD_DIR)/$(LOADER_PREFIX).prg
 D64_FILE = $(BUILD_DIR)/$(LOADER_PREFIX).d64
-LINK_FILE = ./link.cfg
+LINK_FILE = $(LOADER_SRC_DIR)/link.cfg
 DISK_NAME = "piers.rocks"
 
 # Default target

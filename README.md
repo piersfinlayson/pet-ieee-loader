@@ -34,11 +34,11 @@ A lightweight utility that turns your Commodore PET into an IEEE-488 device, all
 
    This creates:
     ```bash
-    build/pet-ieee-loader.prg  # The PET program in PRG format
-    build/pet-ieee-loader.d64  # A D64 disk image containing the program 
+    loader/build/pet-ieee-loader.prg  # The PET program in PRG format
+    loader/build/pet-ieee-loader.d64  # A D64 disk image containing the program 
     ```
 
-2. Transfer the resulting binary (`build/pet-ieee-loader.bin`) to your PET using:
+2. Transfer the resulting binary (`loader/build/pet-ieee-loader.bin`) to your PET using:
    - A physical disk/tape
    - Another IEEE-488 device
    - An emulator that supports file loading
