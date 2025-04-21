@@ -16,6 +16,7 @@ BUILD_DIR = $(LOADER_SRC_DIR)/build
 # Files
 LOADER_PREFIX = pet-ieee-loader
 SRC_FILE = $(LOADER_SRC_DIR)/$(LOADER_PREFIX).s
+INC_FILES = $(LOADER_SRC_DIR)/constants.inc
 OBJ_FILE = $(BUILD_DIR)/$(LOADER_PREFIX).o
 PRG_FILE = $(BUILD_DIR)/$(LOADER_PREFIX).prg
 D64_FILE = $(BUILD_DIR)/$(LOADER_PREFIX).d64
@@ -36,7 +37,7 @@ $(BUILD_DIR):
 	@mkdir -p $@
 
 # Compile assembly to object file
-$(OBJ_FILE): $(SRC_FILE) | $(BUILD_DIR)
+$(OBJ_FILE): $(SRC_FILE) $(INC_FILES) | $(BUILD_DIR)
 	@$(CA65) $(CA65_FLAGS) $< -o $@
 
 # Link object file to binary - this is a PRG file as we've included the 2-byte
