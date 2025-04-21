@@ -27,7 +27,7 @@
 ;
 ; The program loads to $27A.
 ;
-; After loading the user calls `SYS 666` to install the interrupt handler.
+; After loading the user calls `SYS 665` to install the interrupt handler.
 ;
 ; The user can then call `SYS 634` later to reset the interrupt handler to the
 ; original one.  However, this is not required if an execute command is
@@ -35,8 +35,8 @@
 ; execution.
 ;
 ; By default the PET's device ID is 30.  This can be changed by `POKE`ing a
-; different value into address 665.  For example, to set as device ID 8:
-;   POKE 665,8
+; different value into address 727.  For example, to set as device ID 8:
+;   POKE 727,8
 ;
 ; This is the device ID that the program will respond to when it received a
 ; LISTEN command.  This allows other devices to reside on the bus, and the PET
@@ -44,9 +44,9 @@
 
 ; This assert checks the locations haven't changed.
 .assert restore_irq = 634, error, "SYS commands have changed"
-.assert install_irq_handler = 666, error, "SYS commands have changed"
-.assert (install_irq_handler - restore_irq) + 634 = 666, error, "SYS commands have changed"
-.assert device_id = 665, error, "Device ID address has changed"
+.assert install_irq_handler = 665, error, "SYS commands have changed"
+.assert (install_irq_handler - restore_irq) + 634 = 665, error, "SYS commands have changed"
+.assert device_id_plus_1 - 1 = 727, error, "Device ID address has changed $(device_id_plus_1)"
 
 ; Load address of the program - the beginning of the buffer.  Points to the
 ; start of the cassette buffer, which is what is set in the linker config file
@@ -88,10 +88,6 @@ restore_irq:
     
 old_irq:
     .word $0000         ; Original IRQ vector storage
-
-device_id:
-    .byte $1E           ; Default device ID - 30
-                        ; Can be changed using `POKE`
 
 ; Entry point
 install_irq_handler:
@@ -164,7 +160,8 @@ atn:
     STA exit_vector
 
     ; Get the first byte and check it's a LISTEN, for us.
-    LDA device_id       ; Construct the expected LISTEN command
+    LDA #$1E            ; Construct the expected LISTEN command, device 30
+device_id_plus_1:
     ORA #$20            
     STA listen
     JSR receive_byte    ; Get the first byte - and check it's a LISTEN

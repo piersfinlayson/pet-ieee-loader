@@ -74,12 +74,12 @@ Pre-built Loader and Sender binaries are available on the [github releases](http
 
 1. After loading the program, activate the IEEE loader with:
    ```basic
-   SYS 666
+   SYS 665
    ```
 
-2. By default the PET will identify as device 30.  To change this `POKE` a different value to `665`.  Values 0-30 inclusive are valid:
+2. By default the PET will identify as device 30.  To change this `POKE` a different value to `727`.  Values 0-30 inclusive are valid:
     ```basic
-    POKE 665,8
+    POKE 727,8
     ```
 
 3. Your PET is now ready to receive data and commands from an IEEE-488 controller.
@@ -112,9 +112,9 @@ This program uses both cassette buffers as a convenient storage location, common
 ## 🧠Technical Summary
 
 - Load address: $27A (634 decimal)
-- Activation command: `SYS 666`
+- Activation command: `SYS 665`
 - Deactivation command: `SYS 634`
-- Preconfigured as device 30, at address `665`
+- Preconfigured as device 30, at address `727`
 - Uses both cassette buffers:
   - Cassette buffer 1: $27A-$339 (192 bytes)
   - Overruns into cassette buffer 2: $33A-$3F9 (192 bytes)
