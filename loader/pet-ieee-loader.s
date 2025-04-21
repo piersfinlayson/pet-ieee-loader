@@ -27,7 +27,7 @@
 ;
 ; The program loads to $27A.
 ;
-; After loading the user calls `SYS 661` to install the interrupt handler.
+; After loading the user calls `SYS 666` to install the interrupt handler.
 ;
 ; The user can then call `SYS 634` later to reset the interrupt handler to the
 ; original one.  However, this is not required if an execute command is
@@ -35,8 +35,8 @@
 ; execution.
 ;
 ; By default the PET's device ID is 30.  This can be changed by `POKE`ing a
-; different value into address 660.  For example, to set as device ID 8:
-;   POKE 660,8
+; different value into address 665.  For example, to set as device ID 8:
+;   POKE 665,8
 ;
 ; This is the device ID that the program will respond to when it received a
 ; LISTEN command.  This allows other devices to reside on the bus, and the PET
@@ -44,9 +44,9 @@
 
 ; This assert checks the locations haven't changed.
 .assert restore_irq = 634, error, "SYS commands have changed"
-.assert install_irq_handler = 661, error, "SYS commands have changed"
-.assert (install_irq_handler - restore_irq) + 634 = 661, error, "SYS commands have changed"
-.assert device_id = 660, error, "Device ID address has changed"
+.assert install_irq_handler = 666, error, "SYS commands have changed"
+.assert (install_irq_handler - restore_irq) + 634 = 666, error, "SYS commands have changed"
+.assert device_id = 665, error, "Device ID address has changed"
 
 ; Load address of the program - the beginning of the buffer.  Points to the
 ; start of the cassette buffer, which is what is set in the linker config file
@@ -76,6 +76,10 @@ restore_irq:
     LDA UB16_CTRL_A         ; Get current control register value
     AND #$7F                ; Clear top bit
     STA UB16_CTRL_A         ; Update control register
+
+    ; Put ! on top left of screen
+    LDA #$21                ; Exclamation mark
+    STA SCREEN_RAM
 
     ; Re-enable interrupts
     CLI
@@ -117,6 +121,10 @@ install_irq_handler:
     LDA UB16_CTRL_A         ; Get current value
     ORA #$83                ; Set bits 0, 1, and 7
     STA UB16_CTRL_A         ; Update control register
+
+    ; Put * on top left of screen
+    LDA #$2A                ; Asterisk
+    STA SCREEN_RAM
 
     CLI                     ; Enable interrupts
     RTS                     ; Return to BASIC
@@ -225,11 +233,18 @@ receive_byte:
     RTS
 
 handle_execute:
+    ; Put X on top left of screen
+    LDA #$18            ; Exclamation mark
+    STA SCREEN_RAM
+
+    ; Get execute address
     JSR receive_byte    ; Get address low byte
     STA jump_addr       ; Modify jump address
+    STA SCREEN_RAM+2    ; Also put in top left of screen, RHS
     JSR receive_byte    ; Get address high byte
     STA jump_addr+1     ; Modify jump address
-    
+    STA SCREEN_RAM+1    ; LHS
+
     ; Restore original IRQ handler
     JSR restore_irq
 
@@ -255,18 +270,27 @@ jump_addr:
 
 ; Main load handling routine
 handle_load:
+    ; Put X on top left of screen
+    LDA #$0C            ; Exclamation mark
+    STA SCREEN_RAM
+
     JSR receive_byte    ; Get address low byte
     STA dest_lo
+    STA SCREEN_RAM+2
     JSR receive_byte    ; Get address high byte
     STA dest_hi
+    STA SCREEN_RAM+1
     JSR receive_byte    ; Get count low byte
     STA count_lo
+    STA SCREEN_RAM+4
     JSR receive_byte    ; Get count high byte
     STA count_hi
-    
+    STA SCREEN_RAM+3
+
     LDY #$00            ; Initialize index register
     
 load_loop:
+    STY SCREEN_RAM+5    ; Show activity on screen next to count
     JSR receive_byte    ; Get a data byte
     STA (dest_lo),Y     ; Store at destination address + Y
     

@@ -3,3 +3,4 @@ loader/build/
 *.o
 *.prg
 sender/target/
+Cargo.lock

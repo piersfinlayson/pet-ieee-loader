@@ -9,6 +9,12 @@ dest_hi     = $FC       ; Destination address high byte
 count_lo    = $FD       ; Count of bytes to transfer (low byte)
 count_hi    = $FE       ; Count of bytes to transfer (high byte)
 
+
+;
+; Memory locations
+;
+SCREEN_RAM = $8000
+
 ;
 ; Register addresses
 ;
