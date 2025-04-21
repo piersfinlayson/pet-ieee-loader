@@ -1,4 +1,5 @@
-build/
+loader/build/
 *.bin
 *.o
 *.prg
+sender/target/

@@ -10,6 +10,7 @@ CA65_FLAGS = -I src
 
 # Directories
 LOADER_SRC_DIR = loader
+SENDER_DIR = sender
 BUILD_DIR = $(LOADER_SRC_DIR)/build
 
 # Files
@@ -21,9 +22,14 @@ D64_FILE = $(BUILD_DIR)/$(LOADER_PREFIX).d64
 LINK_FILE = $(LOADER_SRC_DIR)/link.cfg
 DISK_NAME = "piers.rocks"
 
+# Rust output files
+SENDER_DEBUG = $(SENDER_DIR)/target/debug/sender
+SENDER_RELEASE = $(SENDER_DIR)/target/release/sender
+
 # Default target
 .PHONY: all
-all: $(PRG_FILE) $(D64_FILE)
+loader: $(PRG_FILE) $(D64_FILE)
+all: loader sender
 
 # Create build directory
 $(BUILD_DIR):
@@ -45,7 +51,26 @@ $(D64_FILE): $(PRG_FILE)
 	@echo "Created D64 image:"
 	@ls -l $@
 
+# Force sender targets to always run by making them phony targets
+.PHONY: sender sender-debug sender-release
+sender: sender-debug sender-release
+	@echo "Sender built (debug and release versions)."
+
+sender-debug:
+	@echo "Building sender (debug)..."
+	@cd $(SENDER_DIR) && cargo build
+	@echo "Sender debug build completed."
+
+sender-release:
+	@echo "Building sender (release)..."
+	@cd $(SENDER_DIR) && cargo build --release
+	@echo "Sender release build completed."
+
 # Clean build artifacts
 .PHONY: clean
-clean:
+clean: clean_loader clean_sender
+clean_loader:
 	@rm -rf $(BUILD_DIR)
+clean_sender:
+	@cd $(SENDER_DIR) && \
+		cargo clean

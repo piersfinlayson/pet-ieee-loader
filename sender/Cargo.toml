@@ -1,0 +1,20 @@
+[package]
+name = "sender"
+version = "0.1.0"
+edition = "2024"
+authors = ["Piers Finlayson <piers@piers.rocks>"]
+description = "Sends binary data to a PET over IEEE-488 using an xum1541/pico1541"
+repository  = "https://github.com/piersfinlayson/pet-ieee-loader"
+license = "MIT"
+keywords = ["commodore", "disk", "pet", "ieee-488", "retro"]
+categories = [
+    "hardware-support",
+    "asynchronous",
+    "emulators",
+    "development-tools",
+    "filesystem"
+]
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+xum1541 = { version = "0.3.2", path = "../../xum1541" }

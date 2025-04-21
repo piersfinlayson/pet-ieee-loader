@@ -23,13 +23,18 @@ A lightweight utility that turns your Commodore PET into an IEEE-488 device, all
 - Uses both cassette buffers on the PET
 - Easy to set up and use with `SYS`/`POKE` commands
 - Data received using standard IEEE-488 LISTEN command
+- Includes PET program and sender program for x86_64 using xum1541/pico1541
 
 ## 🔧Installation
 
-1. Compile the program using the provided Makefile:
+Pre-built Loader and Sender binaries are available on the [github releases](https://github.com/piersfinlayson/pet-ieee-loader/releases) page.  This allows you to skip the build process below.
+
+### 💻PET Loader
+
+1. Compile the loader program using the provided Makefile:
    ```bash
    sudo apt-get -y install cc65 make vice
-   make
+   make loader
    ```
 
    This creates:
@@ -49,7 +54,23 @@ A lightweight utility that turns your Commodore PET into an IEEE-488 device, all
     LOAD"IEEE-LOADER",8,1
     ```
 
+### 💻Sender
+
+1. Install Rust
+    ```bash
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+    ```
+
+2. Build the sender program:
+   ```bash
+   make sender
+   ```
+
+3. Connect your xum1541 (ZoomFloppy) or pico1541 to your PC, and connect the IEEE-488 port to your PET's IEEE-488 port.  Power on the PET.
+
 ## 🚀Usage
+
+### 💻PET
 
 1. After loading the program, activate the IEEE loader with:
    ```basic
@@ -68,6 +89,14 @@ A lightweight utility that turns your Commodore PET into an IEEE-488 device, all
    SYS 634
    ```
    The program automatically restores the original interrupt handler when an execute command is received and actioned.
+
+### 💻Sender
+
+1. Run the sender program:
+   ```bash
+   sender --load --file test.prg --use-file-addr
+   sender --execute --addr 0401  # Assumes test.prg is a BASIC program
+   ```
 
 ## 🔌Controllers
 

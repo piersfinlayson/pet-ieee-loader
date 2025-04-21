@@ -1,4 +1,4 @@
-name: Build PRG
+name: Build Loader and Sender
 
 on:
   push:
@@ -14,16 +14,33 @@ jobs:
     steps:
     - uses: actions/checkout@v3
       
-    - name: Install dependencies
+    - name: Install CA65 and VICE dependencies
       run: sudo apt-get update && sudo apt-get install -y cc65 make vice
-      
-    - name: Build PRG and D64
-      run: make
-
-    - name: Upload PRG and D64
+    
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        profile: minimal
+        override: true
+    
+    - name: Get short commit hash
+      id: get_commit
+      run: echo "COMMIT_HASH=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+    
+    - name: Build PRG, D64, and sender (both debug and release)
+      run: make all
+    
+    - name: Prepare binaries with unique names
+      run: |
+        mkdir -p artifacts
+        cp loader/build/pet-ieee-loader.prg artifacts/
+        cp loader/build/pet-ieee-loader.d64 artifacts/
+        cp sender/target/debug/sender artifacts/sender-debug-${{ env.COMMIT_HASH }}
+        cp sender/target/release/sender artifacts/sender-release-${{ env.COMMIT_HASH }}
+    
+    - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: diagnostic-rom
-        path: |
-          build/pet-ieee-loader.prg
-          build/pet-ieee-loader.d64
+        name: pet-ieee-builder-${{ env.COMMIT_HASH }}
+        path: artifacts/
