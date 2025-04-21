@@ -27,13 +27,26 @@
 ;
 ; The program loads to $27A.
 ;
-; After loading the user calls `SYS 649` to install the interrupt handler.
+; After loading the user calls `SYS 661` to install the interrupt handler.
 ;
 ; The user can then call `SYS 634` later to reset the interrupt handler to the
-; original one.
+; original one.  However, this is not required if an execute command is
+; received - this re-installs the original handler automatically before
+; execution.
 ;
-; This assert checks the SYS commands haven't changed.
-.assert (init - exit) + 634 = 649, error, "SYS commands have changed"
+; By default the PET's device ID is 30.  This can be changed by `POKE`ing a
+; different value into address 660.  For example, to set as device ID 8:
+;   POKE 660,8
+;
+; This is the device ID that the program will respond to when it received a
+; LISTEN command.  This allows other devices to reside on the bus, and the PET
+; to ignore communicaations for them.
+
+; This assert checks the locations haven't changed.
+.assert restore_irq = 634, error, "SYS commands have changed"
+.assert install_irq_handler = 661, error, "SYS commands have changed"
+.assert (install_irq_handler - restore_irq) + 634 = 661, error, "SYS commands have changed"
+.assert device_id = 660, error, "Device ID address has changed"
 
 ; Load address of the program - the beginning of the buffer.  Points to the
 ; start of the cassette buffer, which is what is set in the linker config file
@@ -43,21 +56,41 @@
 
 .segment "CODE"
 
-; Exit point - restore original IRQ vector
-exit:
+; Restore original IRQ vector
+restore_irq:
+    ; Disable interrupts
     SEI
+
+    ; Load the old IRQ vector back to where it came from
     LDA old_irq
     STA $0090
     LDA old_irq+1
     STA $0091
+
+    ; At this point we could clear out the stored IRQ vector, but that's
+    ; unecessary
+
+    ; De-configure UB16 PIA for ATN interrupts - just clear bit 7
+    ; - Set bit 7 (1): Enable CA1 interrupts
+    LDA UB16_PORT_A         ; Clear any outstanding interrupt
+    LDA UB16_CTRL_A         ; Get current control register value
+    AND #$7F                ; Clear top bit
+    STA UB16_CTRL_A         ; Update control register
+
+    ; Re-enable interrupts
     CLI
+
     RTS
     
 old_irq:
     .word $0000         ; Original IRQ vector storage
 
+device_id:
+    .byte $1E           ; Default device ID - 30
+                        ; Can be changed using `POKE`
+
 ; Entry point
-init:
+install_irq_handler:
     ; Save original IRQ vector (in old_irq)
     LDA $0090
     STA old_irq
@@ -65,31 +98,31 @@ init:
     STA old_irq+1
     
     ; Install our IRQ vector
-    SEI                 ; Disable interrupts
-    LDA #<atn_handler
+    SEI                     ; Disable interrupts
+    LDA #<atn_irq_handler
     STA $0090
-    LDA #>atn_handler
+    LDA #>atn_irq_handler
     STA $0091
 
     ; Don't bother settings UB16_PORT_A to 0xFF - this sets DI pins to inputs.
     ; This is done by the KERNAL on boot, so already set.
 
     ; Clear the interrupt by reading the data port
-    LDA UB16_PORT_A     ; Read data port (clears CA1 interrupt flag)
+    LDA UB16_PORT_A         ; Read data port (clears CA1 interrupt flag)
 
     ; Configure UB16 PIA for ATN interrupts - preserve other bits
     ; - Set bit 7 (1): Enable CA1 interrupts
     ; - Set bit 1 (1): CA1 negative edge triggering (since ATN is active low)
     ; - Set bit 0 (1): Access data register (not direction register)
-    LDA UB16_CTRL_A    ; Get current value
-    ORA #$83           ; Set bits 0, 1, and 7
-    STA UB16_CTRL_A    ; Update control register
-    
-    CLI                 ; Enable interrupts
-    RTS                 ; Return to BASIC
+    LDA UB16_CTRL_A         ; Get current value
+    ORA #$83                ; Set bits 0, 1, and 7
+    STA UB16_CTRL_A         ; Update control register
+
+    CLI                     ; Enable interrupts
+    RTS                     ; Return to BASIC
 
 ; ATN Interrupt Handler - Entry point when ATN line goes active
-atn_handler:
+atn_irq_handler:
     ; Save accumulator
     PHA
 
@@ -113,15 +146,29 @@ atn:
     TYA
     PHA
 
-    ; Ensure exit_vector is RTI for this command - we may have modified it when
-    ; executing a command previously
+    ; Ensure exit_vector is RTI - we may have modified it when executing a
+    ; command previously.  We could wait until after we know this is a listen
+    ; for us, but this saves us needing different code paths for different exit
+    ; cases - saving us some bytes.  It's a little more processor intensive if
+    ; there's a lot of unrelated bus activity, but that's unlikely to be the
+    ; use-case for this program. 
     LDA #$40            ; RTI opcode
     STA exit_vector
-    
+
+    ; Get the first byte and check it's a LISTEN, for us.
+    LDA device_id       ; Construct the expected LISTEN command
+    ORA #$20            
+    STA listen
+    JSR receive_byte    ; Get the first byte - and check it's a LISTEN
+    CMP listen
+    BNE atn_exit        ; It wasn't a LISTEN, for us, so exit
+
+    ; Is was a LISTEN for us, so continue.  We are now "LISTENing".
+
     ; Get command byte and perform dispatch - loads A with command so M and V
     ; bits are set on return
     JSR receive_byte
-    
+
     ; Check for execute command (bit 7)
     BMI handle_execute  ; Will JMP to a specific address
     
@@ -179,10 +226,13 @@ receive_byte:
 
 handle_execute:
     JSR receive_byte    ; Get address low byte
-    STA exit_vector+1   ; Self-modify exit instruction
+    STA jump_addr       ; Modify jump address
     JSR receive_byte    ; Get address high byte
-    STA exit_vector+2   ; Self-modify exit instruction
+    STA jump_addr+1     ; Modify jump address
     
+    ; Restore original IRQ handler
+    JSR restore_irq
+
     ; Change RTI to JMP
     LDA #$4C             ; JMP opcode
     STA exit_vector      ; Replace RTI with JMP
@@ -199,7 +249,9 @@ atn_exit:
 
 exit_vector:
     RTI                 ; Becomes JMP $xxxx in execute case
-.byte $00, $00          ; Placeholder for exit vector
+
+jump_addr:
+.byte $00, $00          ; Placeholder for execute jump address
 
 ; Main load handling routine
 handle_load:

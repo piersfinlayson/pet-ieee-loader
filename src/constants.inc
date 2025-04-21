@@ -3,6 +3,7 @@
 ;
 
 ; This range is often free for temporary storage
+listen      = $FB       ; Listen byte - used at different time to dest_lo
 dest_lo     = $FB       ; Destination address low byte
 dest_hi     = $FC       ; Destination address high byte
 count_lo    = $FD       ; Count of bytes to transfer (low byte)
