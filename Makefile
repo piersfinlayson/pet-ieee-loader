@@ -36,10 +36,6 @@ LINK_FILE = $(BUILD_DIR)/config.cfg
 MAP_FILE = $(BUILD_DIR)/$(LOADER_PREFIX).map
 DISK_NAME = "piers.rocks"
 
-# Sender output files
-SENDER_DEBUG = $(SENDER_DIR)/target/debug/sender
-SENDER_RELEASE = $(SENDER_DIR)/target/release/sender
-
 # Maximum size for the program, including the 2 byte PRG header
 MAX_PRG_SIZE = $$402
 
