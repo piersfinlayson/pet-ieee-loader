@@ -11,10 +11,11 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use xum1541::{BusBuilder, Error as XumError};
+use env_logger;
 
 const CMD_EXECUTE: u8 = 0x80;
 const CMD_LOAD: u8 = 0x40;
-
+// Constants for command bytes
 #[derive(Debug)]
 enum AppError {
     InvalidDevice(String),
@@ -99,6 +100,8 @@ struct CliArgs {
 }
 
 fn main() -> Result<(), AppError> {
+    env_logger::init();
+
     // Parse command line arguments
     let args = CliArgs::parse();
 
@@ -283,17 +286,14 @@ fn load_command(
         )));
     }
 
-    #[allow(clippy::cast_possible_truncation)]
-    let (size_low, size_high) = ((size & 0xFF) as u8, ((size >> 8) & 0xFF) as u8);
-
     if verbose {
         println!(
-            "Sending load header (address: ${load_address:04X}, size: {size}/${size:04X} bytes)...",
+            "Sending load header (address: ${load_address:04X} bytes)...",
         );
     }
 
     // Prepare the header
-    let header = [CMD_LOAD, addr_low, addr_high, size_low, size_high];
+    let header = [CMD_LOAD, addr_low, addr_high];
 
     // Send the header
     bus.write(&header).map_err(AppError::from)?;

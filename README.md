@@ -20,7 +20,7 @@ A lightweight utility that turns your Commodore PET into an IEEE-488 device, all
 - Receive programs remotely from another controller
 - Execute code with a simple command
 - Quick loading for development/testing workflows
-- Uses both cassette buffers on the PET
+- Small - fits into less than 1K of RAM
 - Easy to set up and use with `SYS`/`POKE` commands
 - Data received using standard IEEE-488 LISTEN command
 - Includes PET program and sender program for x86_64 using xum1541/pico1541
@@ -74,19 +74,19 @@ Pre-built Loader and Sender binaries are available on the [github releases](http
 
 1. After loading the program, activate the IEEE loader with:
    ```basic
-   SYS 665
+   SYS 31744
    ```
 
-2. By default the PET will identify as device 30.  To change this `POKE` a different value to `727`.  Values 0-30 inclusive are valid:
+2. By default the PET will identify as device 30.  To change this `POKE` a different value to `31753`.  Values 0-30 inclusive are valid:
     ```basic
-    POKE 727,8
+    POKE 31753,8
     ```
 
 3. Your PET is now ready to receive data and commands from an IEEE-488 controller.
 
 4. If finished, you can restore the original interrupt handler with:
    ```basic
-   SYS 634
+   SYS 31747
    ```
    The program automatically restores the original interrupt handler when an execute command is received and actioned.
 
@@ -107,20 +107,22 @@ The PET IEEE Loader works with any of these controllers:
 
 ## 💻PET Compatibility
 
-This program uses both cassette buffers as a convenient storage location, common to many PET models.  However, the second cassette buffer was not available on the earliest PET models, so this program is best suited for later PET models, or the early models with updated ROMs.
+This program is compiled to load to $7C00-$7FFF, which requires a 32KB PET.  To change where it loads to, change both:
+```makefile
+LOAD_ADDR ?= $$7C00
+PRG_PREFIX_ADDR ?= $$7BFE
+```
+in the Makefile.  `PRG_PREFIX_ADDR` must be 2 less than `LOAD_ADDR`.
 
 ## 🧠Technical Summary
 
-- Load address: $27A (634 decimal)
-- Activation command: `SYS 665`
-- Deactivation command: `SYS 634`
-- Preconfigured as device 30, at address `727`
-- Uses both cassette buffers:
-  - Cassette buffer 1: $27A-$339 (192 bytes)
-  - Overruns into cassette buffer 2: $33A-$3F9 (192 bytes)
+- Load address: $7C00 (31744 decimal)
+- Activation command: `SYS 31744`
+- Deactivation command: `SYS 31747`
+- Preconfigured as device 30, at address `31753`
 - Command protocol:
   - Bit 7 set: Execute command (followed by 16-bit address)
-  - Bit 6 set: Load command (followed by 16-bit address, 16-bit count, then count * data bytes)
+  - Bit 6 set: Load command (followed by 16-bit address, then data bytes with EOI set on the last byte)
 - All addresses are in little-endian format (low byte first).
 
 ## 🔍Technical Details
@@ -142,9 +144,9 @@ The expected data sequence is:
     - $80 Execute
     - $40 Load
 - The next 2 bytes are the address with low byte first - either the address to execute or to load into.
-- The load command address bytes are then followed by 2 bytes encoding (low byte first) the number of bytes to load, and then the data bytes themselves.
+- When loading data the last byte is signalled with EOI asserted - at least one byte must be transmitted.
 
-The program loads at $27A (634 decimal) and extends into the second cassette buffer since it's larger than 192 bytes.
+The program loads at $7C00 (31744 decimal) and takes no more than 1KB (finishing by $7FFF).
 
 ### Execute Byte Sequence
 
@@ -159,11 +161,13 @@ The program loads at $27A (634 decimal) and extends into the second cassette buf
 ### Load Byte Sequence
 
 ```
-+------------+-------------+------------------+------------------+----------------+----------------+----------+
-| LISTEN     | COMMAND     | ADDRESS (LOW)    | ADDRESS (HIGH)   | SIZE (LOW)     | SIZE (HIGH)    | DATA...  |
-| $20+DEVICE | $40         | Low byte         | High byte        | Low byte       | High byte      | N bytes  |
-+------------+-------------+------------------+------------------+----------------+----------------+----------+
-  Byte 0       Byte 1        Byte 2             Byte 3             Byte 4           Byte 5          Bytes 6+
++------------+-------------+------------------+------------------+----------+
+| LISTEN     | COMMAND     | ADDRESS (LOW)    | ADDRESS (HIGH)   | DATA...  |
+| $20+DEVICE | $40         | Low byte         | High byte        | N bytes  |
++------------+-------------+------------------+------------------+----------+
+  Byte 0       Byte 1        Byte 2             Byte 3             Bytes 4+
+
+EOI asserted on last byte
 ```
 
 ## 📜License
