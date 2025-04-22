@@ -72,8 +72,8 @@ jobs:
       - name: Build Loader
         run: |
           make loader
-          cp loader/build/pet-ieee-loader.prg releases/
-          cp loader/build/pet-ieee-loader.d64 releases/
+          cp loader/build/7c00-loader.prg releases/
+          cp loader/build/loader.d64 releases/
 
       - name: Create Release
         id: create_release
@@ -81,7 +81,7 @@ jobs:
         with:
           files: |
             releases/sender-x86_64-linux-${{ env.TAG }}
-            releases/pet-ieee-loader.prg
-            releases/pet-ieee-loader.d64
+            releases/7c00-loader.prg
+            releases/loader.d64
           draft: false
           prerelease: false
