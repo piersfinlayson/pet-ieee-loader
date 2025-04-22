@@ -49,7 +49,7 @@ setup_irq:
     JMP install_irq_handler
 disable_irq:
     .assert disable_irq - code_start = 3, error, "disable_irq not at expected offset"
-    JMP restore_irq
+    JMP restore_irq_sys
 handle_irq:
     .assert handle_irq - code_start = 6, error, "handle_irq not at expected offset"
     JMP irq_handler
@@ -95,11 +95,26 @@ install_irq_handler:
     CLI                     ; Enable interrupts
     RTS                     ; Return to BASIC
 
-; Restore original IRQ vector
-restore_irq:
+; Restore original IRQ handler - called by SYS <address>.
+;
+; Disables interrupts before calling internal routine the restores before
+; returning.
+restore_irq_sys:
     ; Disable interrupts
     SEI
 
+    JSR restore_irq_int
+
+    ; Re-enable interrupts
+    CLI
+
+    RTS
+
+; Restore original IRQ vector
+;
+; Only to be called internally once interrupts have been disabled - or from
+; within an interrupt handler context.
+restore_irq_int:
     ; Load the old IRQ vector back to where it came from
     LDA orig_irq
     STA SYSTEM_IRQ
@@ -114,9 +129,6 @@ restore_irq:
 
     ; Put ! on top left of screen to show we're disabled
     PRINT_CHAR $21, 0       ; Exclamation mark
-
-    ; Re-enable interrupts
-    CLI
 
     RTS
 
@@ -211,7 +223,7 @@ do_execute:
     JSR restore_ieee
 
     ; Restore original IRQ handler
-    JSR restore_irq
+    JSR restore_irq_int
 
     ; Modify the stack so whe we RTI, the CPU will execute code at the required
     ; address.

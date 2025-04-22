@@ -13,6 +13,12 @@
 .include "constants.inc"
 .include "macros.inc"
 
+; Temporary IEEE-488 storage
+temp_ub12_ctrl_a:
+    .byte $00
+temp_ub15_port_b_ddr:
+    .byte $00
+
 ; Setup the IEEE-488 port for handling incoming data
 ;
 ; - Set DO1-8 to inputs to avoid conflicting with DI lines
@@ -28,11 +34,13 @@ setup_ieee:
 
     ; Set ~NRFD_OUT to output
     LDA UB15_PORT_B_DDR     ; Get current value
+    STA temp_ub15_port_b_ddr ; Store for later
     ORA #BIT_MASK_NRFD_OUT  ; Set ~NRFD_OUT to output
     STA UB15_PORT_B_DDR     ; Update direction register
 
     ; Set ~EOI_OUT to input - set bits 3, 4 and 5 to 0
     LDA UB12_CTRL_A         ; Get current value
+    STA temp_ub12_ctrl_a    ; Store for later
     AND #INV_MASK_EOI_OUT   ; Clear bits 3, 4 and 5
     STA UB12_CTRL_A         ; Update control register
 
@@ -46,21 +54,16 @@ setup_ieee:
 ;
 ; No need to restore ~NDAC_OUT - we don't configure it in the first place
 restore_ieee:
-    ; Disable ~ATN_IN interrupts
-    LDA UB16_PORT_A     ; Clear any outstanding interrupt
-    LDA UB16_CTRL_A_DEF ; Get current control register value
-    STA UB16_CTRL_A     ; Restore original value
-
     ; Restore DO1-8 to outputs
     LDY #$FF            ; Outputs
     JSR set_do_dir
 
     ; Restore ~NRFD_OUT to input
-    LDA #UB15_PORT_B_DDR_DEF    ; Get B direction to default
-    STA UB15_PORT_B_DDR ; Write to DDR
+    LDA temp_ub15_port_b_ddr    ; Get B direction to default
+    STA UB15_PORT_B_DDR         ; Write to DDR
 
     ; Set ~EOI_OUT back to output
-    LDA UB12_CTRL_A_DEF     ; Get default value
+    LDA temp_ub12_ctrl_a    ; Get original value
     STA UB12_CTRL_A         ; Update control register
 
     RTS
