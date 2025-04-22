@@ -11,7 +11,6 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use xum1541::{BusBuilder, Error as XumError};
-use env_logger;
 
 const CMD_EXECUTE: u8 = 0x80;
 const CMD_LOAD: u8 = 0x40;
@@ -233,7 +232,7 @@ fn load_command(
     // xum1541 supports sending up to 32768 bytes of data.  We require 5 bytes
     // for the command byte, address and length words, so the maximum size is
     // 32768 - 5 = 32763 bytes.
-    const MAX_FILE_SIZE: usize = 32763; 
+    const MAX_FILE_SIZE: usize = 32763;
 
     // Check if file exists
     if !Path::new(file_path).exists() {
@@ -258,16 +257,19 @@ fn load_command(
     let (load_address, data_to_load, shortened) = if use_file_addr && data.len() >= 2 {
         // Use the first two bytes from the file as the load address (low byte first)
         let addr = u16::from_le_bytes([data[0], data[1]]);
-        
+
         if verbose {
             println!("Using address from file: ${addr:04X}");
         }
-        
+
         (addr, &data[2..], true)
     } else {
         // Use the provided address and the entire file
-        let addr = address.ok_or_else(|| 
-            AppError::CommandError("Address required for load command when not using file address".to_string()))?;
+        let addr = address.ok_or_else(|| {
+            AppError::CommandError(
+                "Address required for load command when not using file address".to_string(),
+            )
+        })?;
         (addr, &data[..], false)
     };
 
@@ -276,20 +278,14 @@ fn load_command(
 
     let size = data_to_load.len();
     if size > MAX_FILE_SIZE {
-        let file_size = if shortened {
-            size + 2
-        } else {
-            size
-        };
+        let file_size = if shortened { size + 2 } else { size };
         return Err(AppError::CommandError(format!(
             "File size too large: {file_size} bytes (maximum is 65535)"
         )));
     }
 
     if verbose {
-        println!(
-            "Sending load header (address: ${load_address:04X} bytes)...",
-        );
+        println!("Sending load header (address: ${load_address:04X} bytes)...",);
     }
 
     // Prepare the header

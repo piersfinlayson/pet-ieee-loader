@@ -1,4 +1,7 @@
+
 {
+    "rust-analyzer.root.fallbackToWorkspace": false,
+    "rust-analyzer.root.manual": "sender",
     "rust-analyzer.check.command": "clippy",
     "rust-analyzer.checkOnSave.allTargets": false,
     "rust-analyzer.checkOnSave.extraArgs": ["--", "-W", "clippy::all", "-W", "clippy::pedantic"]
