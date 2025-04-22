@@ -18,6 +18,8 @@ temp_ub12_ctrl_a:
     .byte $00
 temp_ub15_port_b_ddr:
     .byte $00
+temp_ub16_ctrl_a:
+    .byte $00
 
 ; Setup the IEEE-488 port for handling incoming data
 ;
@@ -44,6 +46,10 @@ setup_ieee:
     AND #INV_MASK_EOI_OUT   ; Clear bits 3, 4 and 5
     STA UB12_CTRL_A         ; Update control register
 
+    ; Store UB16_CTRL_A - used by NDAC
+    LDA UB16_CTRL_A         ; Get current value
+    STA temp_ub16_ctrl_a    ; Store for later
+
     RTS
 
 ; Restore the original IEEE register configuration on the PET
@@ -65,6 +71,10 @@ restore_ieee:
     ; Set ~EOI_OUT back to output
     LDA temp_ub12_ctrl_a    ; Get original value
     STA UB12_CTRL_A         ; Update control register
+
+    ; Restore UB16_CTRL_A
+    LDA temp_ub16_ctrl_a    ; Get original value
+    STA UB16_CTRL_A         ; Update control register
 
     RTS
 

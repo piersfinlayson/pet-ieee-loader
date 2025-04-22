@@ -29,7 +29,7 @@
     ; - Set bit 1 (1): CA1 negative edge triggering (since ATN is active low)
     ; - Set bit 0 (1): Enable interrupt
     LDA UB16_CTRL_A         ; Get current value
-    ORA #$83                ; Set bits 0, 1, and 7 - was $87 when working
+    ORA #$83                ; Set bits 0, 1, and 7
     STA UB16_CTRL_A         ; Update control register
 .endmacro
 
@@ -37,7 +37,7 @@
     ; De-configure UB16 PIA for ATN interrupts
     LDA UB16_PORT_A         ; Clear any outstanding interrupt
     LDA UB16_CTRL_A         ; Get current control register value
-    AND #$7C                ; Clear bits 0, 1 and 7 (as $7F when working)
+    AND #$7C                ; Clear bits 0, 1 and 7
     STA UB16_CTRL_A         ; Update control register
 .endmacro
 

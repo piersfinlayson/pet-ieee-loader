@@ -139,13 +139,13 @@ irq_handler:
 
     ; Test if ATN caused the interrupt
     LDA REG_ATN_IN          ; Read control register A
-    AND #BIT_MASK_ATN_IN    ; Mask for ATN interrupt flag (bit 7)
-    BNE atn                 ; If bit is high, ATN caused interrupt
+    .assert BIT_MASK_ATN_IN = $80, error, "ATN interrupt bit not in expected position"
+    BMI @atn                ; Check if ATN interrupt flag is set
     
     PLA                     ; Restore accumulator
-    JMP (orig_irq)           ; Jump to original handler
+    JMP (orig_irq)          ; Jump to original handler
 
-atn:
+@atn:
     ; Note that A has already been pushed to the stack
 
     ; Save other registers
@@ -194,12 +194,18 @@ atn:
     BVS @handle_load
     
 @atn_exit:
+    PRINT_CHAR $1B, 0   ; [
+
     ; Unknown command, or we're finished, restore IEEE lines and return from
     ; the interrupt handler
     JSR restore_ieee
 
+    INC_CHAR 0          ; \
+
     RESTORE_REGISTERS
-    RTI
+
+    ; Rather than RTI we have to chain to the original IRQ handler
+    JMP (orig_irq)
 
 @handle_execute:
     JMP do_execute      ; Jump so nothing goes on stack, and we won't return
@@ -225,8 +231,8 @@ do_execute:
     ; Restore original IRQ handler
     JSR restore_irq_int
 
-    ; Modify the stack so whe we RTI, the CPU will execute code at the required
-    ; address.
+    ; Modify the stack so when RTI is eventually called, the CPU will execute
+    ; code at the required address.
     RESTORE_REGISTERS   ; Pull the registers we stored at the beginning of our
                         ; interrupt handler back off the stack (and throw them
                         ; away)
@@ -245,7 +251,8 @@ do_execute:
 
     PRINT_CHAR $23, 0   ; Change top left of screen to # to show we're done
 
-    RTI                 ; Return from interrupt handler
+    ; Rather than RTI we have to chain to the original IRQ handler
+    JMP (orig_irq)
 
 ; Load handling routine
 do_load:
