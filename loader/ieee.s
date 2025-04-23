@@ -6,8 +6,9 @@
 ;
 ; Licensed under the MIT License.  See [LICENSE] for details.
 
-; Export the IEEE-488 routines
+; Export the IEEE-488 routines and storage
 .export setup_ieee, restore_ieee, receive_ieee_byte
+.export temp_ub15_port_b, temp_ub15_port_b_ddr
 
 ; Include the constants and macros
 .include "constants.inc"
@@ -16,11 +17,15 @@
 ; Temporary IEEE-488 storage
 temp_ub12_ctrl_a:
     .byte $00
+temp_ub15_port_b:
+    .byte $00
 temp_ub15_port_b_ddr:
     .byte $00
 temp_ub16_ctrl_a:
     .byte $00
 temp_ub16_ctrl_b:
+    .byte $00
+temp_ub16_ddr_b:
     .byte $00
 temp_receive:
     .byte $00
@@ -29,88 +34,95 @@ bytes_processed:
 
 ; Setup the IEEE-488 port for handling incoming data
 ;
-; - Set DO1-8 to inputs to avoid conflicting with DI lines
-; - Set ~NRFD_OUT to output as normally an input
-; - Set ~EOI_OUT to input to avoid conflicting with ~EOI_IN
-;
-; ~DAV_IN is an input by default - so no need to configure
-; ~NDAC_OUT is an output by default - so no need to configure
+; Set required ports to inputs/outputs and the correct levelc
+; - ~DAV_IN is an input by default - so no need to configure
 setup_ieee:
     DISABLE_IRQ_ATN_IN
 
     ; Set up DO1-8 to be inputs
-    LDY #$00                ; Inputs
-    JSR set_do_dir
+    LDA UB16_CTRL_B     ; Get current control register value
+    PHA                 ; Save it
+    AND #$FB            ; Select DDR mode for UB16_CTRL_A - clear bit 2
+    STA UB16_CTRL_B     ; Update control register
 
-    ; Set ~DAV_OUT to input
+    LDA UB16_PORT_B     ; Get current port value
+    STA temp_ub16_ddr_b ; Save it
+    LDA #$00            ; Inputs
+    STA UB16_PORT_B     ; Write to DDR
+    
+    PLA                 ; Get control register value
+    STX UB16_CTRL_B     ; Restore ctrl register
+
+    ; Set ports which might be in output mode to inputs
+
+    ; ~DAV_OUT
+    ; - ~DAV_OUT is UB16 CB2.
+    ; - For input we want bits 5-3 to be 000
     LDA UB16_CTRL_B         ; Get current control register value
-    STA temp_ub16_ctrl_b    ; Store for later
-    AND #INV_MASK_DAV_OUT   ; Clear bits 3, 4 and 5
+    STA temp_ub16_ctrl_b    ; Save it
+    AND #$C7                ; Clear bits 3, 4 and 5
     STA UB16_CTRL_B         ; Update control register
 
-    ; Set ~NRFD_OUT to output
-    LDA UB15_PORT_B_DDR     ; Get current value
-    STA temp_ub15_port_b_ddr ; Store for later
-    ORA #BIT_MASK_NRFD_OUT  ; Set ~NRFD_OUT to output
-    STA UB15_PORT_B_DDR     ; Update direction register
-
-    ; Set ~EOI_OUT to input - set bits 3, 4 and 5 to 0
+    ; ~EOI_OUT to input
+    ; - ~EOI_OUT is UB12 CA2.
+    ; - To set to input we bits 5-3 to 000
     LDA UB12_CTRL_A         ; Get current value
-    STA temp_ub12_ctrl_a    ; Store for later
-    AND #INV_MASK_EOI_OUT   ; Clear bits 3, 4 and 5
+    STA temp_ub12_ctrl_a    ; Save it
+    AND #$C7                ; Clear bits 3, 4 and 5
     STA UB12_CTRL_A         ; Update control register
 
-    ; Store UB16_CTRL_A - used by NDAC
-    LDA UB16_CTRL_A         ; Get current value
-    STA temp_ub16_ctrl_a    ; Store for later
-
-    ; Set NDAC low (ready for next byte)
-    ; For PIA CA2 (UB16): Set bit 3, set bit 4 for high output
-    LDA REG_NDAC_OUT        ; UB16_CTRL_A ($E821)
-    ORA #$30                ; Bit 5 for output, 4-3 10 for low
-    AND #INV_MASK_NDAC_OUT  ; Clear bit 3
-    STA REG_NDAC_OUT
-
-    ; Pull NRFD low (not ready for data)
-    LDA REG_NRFD_OUT        ; UB15_PORT_B ($E842)
-    AND #INV_MASK_NRFD_OUT  ; Clear bit 1
-    STA REG_NRFD_OUT
+    ; Set NDAC low (ready for first byte)
+    ; - NDAC is UB16 CA2.
+    ; - To set to low output we want bits 5-3 to be 110
+    LDA UB16_CTRL_A         ; UB16_CTRL_A ($E821)
+    STA temp_ub16_ctrl_a    ; Save it
+    ORA #$30                ; Set bits
+    AND #$F7                ; Clear bit 3
+    STA UB16_CTRL_A
 
     RTS
 
-; Restore the original IEEE register configuration on the PET
+; Restore the original IEEE port state
 ;
-; - Disables UB16 CA1 (~ATN_IN) interrupts
-; - Restores DO1-8 to outputs
-; - Restores ~NRFD_OUT to input
-;
-; No need to restore ~NDAC_OUT - we don't configure it in the first place
+; Undoes setup_ieee & also releases NRFD (which allows other devices to
+; communicate on the bus, should they need to))
 restore_ieee:
-    ; Set NDAC high (released)
-    ; For PIA CA2 (UB16): Clear bit 3, set bit 4 for low output
-    LDA REG_NDAC_OUT        ; UB16_CTRL_A ($E821)
-    ORA #(BIT_MASK_NDAC_OUT | $10)  ; Set bit 3 (and 4 for mode control)
-    STA REG_NDAC_OUT
-    
-    ; Restore DO1-8 to outputs
-    LDY #$FF            ; Outputs
-    JSR set_do_dir
+    ; Put NRFD_OUT back to its original state, but set it to high in case it's
+    ; an output
+    LDA temp_ub15_port_b_ddr ; Get original value
+    STA UB15_PORT_B_DDR     ; Update DDR
+    LDA temp_ub15_port_b    ; Get original value
+    AND #02                 ; Set bit PB1
+    STA UB15_PORT_B
 
-    ; Restore ~DAV_OUT to output
-    LDA temp_ub16_ctrl_b    ; Get original value
-    STA UB16_CTRL_B         ; Update control register
+    ; Set ~NDAC_OUT high
+    ; - ~NDAC_OUT is UB16 CA2.
+    ; - To set high output we need want bits 5-3 to 111
+    LDA temp_ub16_ctrl_a    ; Get original value
+    ORA #$38                ; Set bits 5-3 to 111
+    STA UB16_CTRL_A
 
-    ; Restore ~NRFD_OUT to input
-    LDA temp_ub15_port_b_ddr    ; Get B direction to default
-    STA UB15_PORT_B_DDR         ; Write to DDR
-
-    ; Set ~EOI_OUT back to output
+    ; Restore UB12 control register A - but we don't really care what happens
+    ; to ~EOI_OUT
     LDA temp_ub12_ctrl_a    ; Get original value
     STA UB12_CTRL_A         ; Update control register
 
-    ; Restore UB16_CTRL_A
-    LDA temp_ub16_ctrl_a    ; Get original value
-    STA UB16_CTRL_A         ; Update control register
+    ; Restore UB16 control register B - but we don't really care what happens
+    ; to ~DAV_OUT
+    LDA temp_ub16_ctrl_b    ; Get original value
+    STA UB16_CTRL_B         ; Update control register
+
+    ; Restore DO1-8 to their previous state
+    LDA UB16_CTRL_B     ; Get current control register value
+    PHA                 ; Save it
+    AND #$FB            ; Select DDR mode for UB16_CTRL_A - clear bit 2
+    STA UB16_CTRL_B     ; Update control register
+
+    LDA temp_ub16_ddr_b ; Restore old value
+    STA UB16_PORT_B     ; Write to DDR
+
+    PLA                 ; Get control register value
+    STX UB16_CTRL_B     ; Restore ctrl register
 
     ENABLE_IRQ_ATN_IN
 
@@ -136,37 +148,38 @@ receive_ieee_byte:
     PRINT_CHAR $30, 4
 
     ; Set NRFD high (ready for data)
-    LDA REG_NRFD_OUT        ; UB15_PORT_B ($E842)
-    ORA #BIT_MASK_NRFD_OUT  ; Set bit 1
-    STA REG_NRFD_OUT
+    LDA UB15_PORT_B         ; UB15 PB1
+    ORA #$02                ; Set bit 1
+    STA UB15_PORT_B
 
     INC_CHAR 4              ; 1
 
     ; Wait for DAV low (data available)
 @wait_dav_low:
-    LDA REG_DAV_IN          ; UB15_PORT_B ($E842)
+    LDA UB15_PORT_B         ; UB15 PB7
     BMI @wait_dav_low       ; Loop if DAV high (1 on bus)
 
     INC_CHAR 4              ; 2
 
     ; Set NRFD low (not ready for data)
-    LDA REG_NRFD_OUT        ; UB15_PORT_B ($E842)
-    AND #INV_MASK_NRFD_OUT  ; Clear bit 1
-    STA REG_NRFD_OUT
+    LDA UB15_PORT_B         ; UB15 PB1
+    AND #$FD                ; Clear bit 1
+    STA UB15_PORT_B
 
     INC_CHAR 4              ; 3
 
     ; Set up UB12 port A (EOI_IN) to read value
     LDA UB12_CTRL_A         ; Get current value
     STA temp_receive
-    ORA #$04                ; Set bit 2 for read mode
+    ORA #$04                ; Set bit 2 for reading pins state
 
     ; Read EOI
-    LDA REG_EOI_IN          ; UB12_PORT_A ($E810)
-    ORA #INV_MASK_EOI_IN    ; Set all other bits to 1
-    EOR #$FF                ; Invert - if EOI was 1 it is now 0 and vice versa
+    LDA UB12_PORT_A         ; UB12 PA6
+    ORA #$BF                ; Set all other bits other than bit 6
+    EOR #$FF                ; Invert - if EOI was 1 (unset) it is now 0 and
+                            ; if it was 0 (set) it is now 1
     TAX                     ; Store in X - non-zero now means EOI set
-    PRINT_A 5               ; Show EOI as - (graphics) or @ (non-set)
+    PRINT_A 5               ; Show EOI as "-" (graphic char) or "@" (non-set)
 
     ; Return UB12 port A to original state
     LDA temp_receive
@@ -180,11 +193,11 @@ receive_ieee_byte:
     ORA #$04                ; Set bit 2 for read mode   
 
     ; Read data byte
-    LDA REG_DATA_IN         ; UB16_PORT_A ($E820)
+    LDA UB16_PORT_A
     EOR #$FF                ; Invert (IEEE-488 is inverted)
     PRINT_A 6               ; Store it on the screen
 
-    ; Now restore it how it was
+    ; Now restore the port read mode to how it was
     LDA temp_receive
     STA UB16_CTRL_A         ; Restore UB16 port A
 
@@ -192,47 +205,30 @@ receive_ieee_byte:
 
     ; Set NDAC high (data accepted)
     ; For PIA CA2 (UB16): Clear bit 3, set bit 4 for low output
-    LDA REG_NDAC_OUT        ; UB16_CTRL_A ($E821)
-    ORA #(BIT_MASK_NDAC_OUT | $10)  ; Set bit 3 (and 4 for mode control)
-    STA REG_NDAC_OUT
+    LDA UB16_CTRL_A         ; UB16 CA2
+    ORA #38                 ; Set bits 5-3 as 111 for output high
+    STA UB16_CTRL_A
     
     INC_CHAR 4              ; 6
 
     ; Wait for DAV high (sender released)
 @wait_dav_high:
-    LDA REG_DAV_IN          ; UB15_PORT_B ($E842)
-    BMI @wait_dav_high      ; Loop if DAV low (0 on bus, 1 on pin)
-                            ; Negative if pin is 1, DAV low, loop
+    LDA UB15_PORT_B         ; UB15 PB7
+    BPL @wait_dav_high      ; Loop if DAV low - if low, it's positive
     
     INC_CHAR 4              ; 7
 
-    ; Set NDAC low (ready for next byte)
-    ; For PIA CA2 (UB16): Set bit 3, set bit 4 for high output
-    LDA REG_NDAC_OUT        ; UB16_CTRL_A ($E821)
-    AND #INV_MASK_NDAC_OUT  ; Clear bit 3
-    ORA #$10                ; Set bit 3 bit 4 for mode control
-    STA REG_NDAC_OUT
+    ; Set NDAC low (ready for next byte) - we want bits 5-3 110 for output low
+    LDA UB16_CTRL_A         ; UB16 CA2
+    AND #$F7                ; Clear bit 3
+    ORA #$20                ; Set bits 5-4
+    STA UB16_CTRL_A
     
     ; Increment bytes processed
     INC bytes_processed
     LDA bytes_processed
-    STA SCREEN_RAM+15
+    STA SCREEN_RAM+14
 
     ; Return data byte
     LDA SCREEN_RAM+6
-    RTS
-
-; Sets direction of DO1-8 lines
-;
-; Sets direction register to value in Y
-set_do_dir:
-    LDX UB16_CTRL_B     ; Get current control register value
-    TXA                 ; Put in accumulator
-    AND #$FB            ; Select DDR mode for UB16_CTRL_A
-    STA UB16_CTRL_B     ; Update control register
-
-    STY UB16_PORT_B     ; Write to DDR
-
-    STX UB16_CTRL_B     ; Restore ctrl register
-
     RTS

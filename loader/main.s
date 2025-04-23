@@ -15,8 +15,9 @@
 ;
 ; Licensed under the MIT License.  See [LICENSE] for details.
 
-; Import the IEEE-488 routines
+; Import the IEEE-488 routines and storage
 .import setup_ieee, restore_ieee, receive_ieee_byte
+.import temp_ub15_port_b, temp_ub15_port_b_ddr
 
 ; Import the load address
 .import __LOAD_ADDR__
@@ -138,8 +139,7 @@ irq_handler:
     PHA
 
     ; Test if ATN caused the interrupt
-    LDA REG_ATN_IN          ; Read control register A
-    .assert BIT_MASK_ATN_IN = $80, error, "ATN interrupt bit not in expected position"
+    LDA UB16_CTRL_A         ; CA1 caused interrupt is top bit of this register
     BMI @atn                ; Check if ATN interrupt flag is set
     
     PLA                     ; Restore accumulator
@@ -148,27 +148,50 @@ irq_handler:
 @atn:
     ; Note that A has already been pushed to the stack
 
+    ; We have to get NRFD pulled low just as quickly as we can, as once we're
+    ; holding it low we can take our time, before raising it showing we're
+    ; ready for data.  If we don't do this quickly, another device on the bus
+    ; May get it low, and then high again, before we get the chance to pull it
+    ; low, and then we will miss the data.
+    ;
+    ; Note we can only use the Accumulator at this stage
+    ;
+    ; We don't JSR to a routine to handle this in order to optimise speed.
+    ;
+    ; - This sequence takes 6+6+2+6+6+6+2+6 = 40 cycles.
+    ; - The irq_handler takes 2+6+3 = 11 cycles.
+    ; - The CPU probably takes 10-20 cycles to get into the interrupt handler.
+    ;
+    ; This totals around 60-70 cycles/us.
+    LDA UB15_PORT_B_DDR
+    STA temp_ub15_port_b_ddr ; Save original value
+    ORA #$02                ; Set bit 1
+    STA UB15_PORT_B_DDR     ; Set NRFD_OUT to output
+    LDA UB15_PORT_B         ; Read the port
+    STA temp_ub15_port_b    ; Save original value
+    AND #$FD                ; Clear bit 1
+    STA UB15_PORT_B         ; Set NRFD low (not ready for data)
+
+    ; Now we've pulled NRFD low we can take our time.
+
+    ; Clear the interrupt by reading the data port
+    LDA UB16_PORT_A     ; Read data port (clears CA1 interrupt flag)
+
     ; Save other registers
     TXA
     PHA
     TYA
     PHA
 
-    ; Clear first line of the (40-col) screen
-    ;LDX #$28
-    ;JSR clear_screen_area
-
-    ; Put + on top left of screen to show we're processing
-    PRINT_CHAR $2B, 0
-
-    ; Clear the interrupt by reading the data port
-    LDY UB16_PORT_A     ; Read data port (clears CA1 interrupt flag)
-
-    ; Setup the IEEE-488 port for listening
+    ; Initialize the rest of the IEEE-488 lines
     JSR setup_ieee
 
-    ; Updated first byte on screen to show progress - now a ,
-    INC_CHAR 0
+    ; Clear first 16 bytes of the (40-col) screen
+    LDX #$0f
+    JSR clear_screen_area
+
+    ; Put I on top left of screen to show we're in the interrupt handler
+    PRINT_CHAR $09, 0   ; Top left of screen now becomes I(nterrupt)
 
     ; Calculate what the first byte should be to be a LISTEN for us
     LDA device_id       ; Get the configured device ID (default 30)
@@ -181,8 +204,8 @@ irq_handler:
     CMP SCREEN_RAM+2    ; Compare with the byte we stored in screen RAM
     BNE @atn_exit       ; It wasn't a LISTEN, for us, so exit
 
-    ; Is was a LISTEN for us, so continue.  We are now "LISTENing".
-    INC_CHAR 0          ; Top left of screen now becomes -
+    ; Is was a LISTEN for us, so continue.
+    PRINT_CHAR $08, 0   ; Top left of screen now becomes "H"earing
 
     ; Get command byte and perform dispatch - loads A with command so M and V
     ; bits are set on return
@@ -195,13 +218,13 @@ irq_handler:
     BVS @handle_load
     
 @atn_exit:
-    PRINT_CHAR $1B, 0   ; [
+    PRINT_CHAR $11, 0   ; Top left of screen now becomes Q(uitting)
 
     ; Unknown command, or we're finished, restore IEEE lines and return from
     ; the interrupt handler
     JSR restore_ieee
 
-    INC_CHAR 0          ; \
+    PRINT_CHAR $04, 0   ; Top left of screen now becomes D(one)
 
     RESTORE_REGISTERS
 
@@ -218,7 +241,7 @@ irq_handler:
     
 do_execute:
     ; Put X on top left of screen
-    PRINT_CHAR $18, 0
+    PRINT_CHAR $18, 0   ; Top left of screen now becomes E(xecute)
 
     ; Get execute address
     JSR receive_ieee_byte    ; Get address low byte
@@ -258,7 +281,7 @@ do_execute:
 ; Load handling routine
 do_load:
     ; Put L on top left of screen
-    PRINT_CHAR $0C, 0
+    PRINT_CHAR $0C, 0       ; Top left of screen now becomes L(oad)
 
     ; Read next 2 IEEE-488 bytes, which are the destination address
     JSR receive_ieee_byte   ; Get address low byte
