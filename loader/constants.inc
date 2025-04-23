@@ -73,6 +73,7 @@ BIT_MASK_NDAC_OUT = $08
 INV_MASK_NDAC_OUT = $F7  ; NDAC out bit cleared (complement of $08)
 
 ; ~DAV_OUT is CB2 of UB16 6520
+INV_MASK_DAV_OUT = $C7  ; Clear bits 3, 4 and 5
 
 ; ~NDAC_IN is PB0 of UB15 6522
 REG_NDAC_IN = UB15_PORT_B
@@ -97,10 +98,10 @@ BIT_MASK_DAV_IN = $80
 INV_MASK_DAV_IN = $7F  ; DAV in bit cleared (complement of $80)
 
 ; ~EOI_OUT is CA2 of UB12 6520
-REG_EOI_OUT = UB12_CTRL_A
 INV_MASK_EOI_OUT = $C7  ; Clear bits 3, 4 and 5
 
 ; ~EOI_IN is PA6 of UB12 6520
 REG_EOI_IN = UB12_PORT_A
 BIT_EOI_IN = 6
 BIT_MASK_EOI_IN = $40
+INV_MASK_EOI_IN = $BF  ; EOI in bit cleared (complement of $40)

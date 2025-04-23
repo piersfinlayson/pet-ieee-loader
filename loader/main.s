@@ -154,9 +154,9 @@ irq_handler:
     TYA
     PHA
 
-    ; Clear first 16 bytes of the screen
-    LDX #$10
-    JSR clear_screen_area
+    ; Clear first line of the (40-col) screen
+    ;LDX #$28
+    ;JSR clear_screen_area
 
     ; Put + on top left of screen to show we're processing
     PRINT_CHAR $2B, 0
@@ -177,6 +177,7 @@ irq_handler:
 
     ; Read the first byte from the IEEE-488 port
     JSR receive_ieee_byte    ; Get the first byte - and check it's a LISTEN
+    STA SCREEN_RAM+3    ; Store it in the screen RAM
     CMP SCREEN_RAM+2    ; Compare with the byte we stored in screen RAM
     BNE @atn_exit       ; It wasn't a LISTEN, for us, so exit
 
@@ -303,9 +304,8 @@ do_load:
 ; Takes X as the number of bytes to clear
 clear_screen_area:
     LDA #$20            ; Space
-    LDX #$0F            ; Clear first 16 bytes
-@loop:
-    STA SCREEN_RAM,X    ; Clear a byte of screen
-    DEX
-    BNE @loop
+@loop:  ; 10 cycles per iteration = 10us.
+    STA SCREEN_RAM,X    ; Clear a byte of screen, 5 cycles
+    DEX                 ; 2 cycles
+    BNE @loop           ; 3 cycles
 RTS
