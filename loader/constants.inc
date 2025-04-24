@@ -81,7 +81,4 @@ CCOUNT = $27        ; Number of bytes successfully received
 ;
 ROM_IRQ_MAIN = $E00C    ; Location of the ROM's main IRQ vector.  This is where
                         ; the ROM's IRQ handler is located.
-ROM_IRQ_HW = $E00F      ; Location of the ROM's hardware IRQ handler.  We jump
-                        ; to this when we're done, so it gets a chance to do
-                        ; its thing (as we've probably been a while).
 ROM_IRQ_EXIT = $E012
