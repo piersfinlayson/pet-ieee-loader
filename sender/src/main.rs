@@ -10,7 +10,7 @@ use std::fmt;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
-use xum1541::{BusBuilder, Error as XumError};
+use xum1541::{BusBuilder, DeviceChannel, Error as XumError};
 
 const CMD_EXECUTE: u8 = 0x80;
 const CMD_LOAD: u8 = 0x40;
@@ -163,7 +163,9 @@ fn main() -> Result<(), AppError> {
     }
 
     // Instruct device to LISTEN
-    bus.listen_no_channel(device_id).map_err(AppError::from)?;
+    //bus.listen_no_channel(device_id).map_err(AppError::from)?;
+    let dc = DeviceChannel::new(device_id, 15)?;
+    bus.listen(dc)?;
 
     // Execute the appropriate command
     if args.execute {

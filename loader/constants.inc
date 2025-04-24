@@ -58,3 +58,30 @@ UB15_PORT_A_DDR = $E843 ; 59459
 ; - ~DAV_IN is PB7 of UB15 6522
 ; - ~EOI_OUT is CA2 of UB12 6520
 ; - ~EOI_IN is PA6 of UB12 6520
+
+;
+; Screen character locations
+;
+; Offset from the top left of the screen
+CGLOBAL = $00       ; Global status location
+CCMD = $01          ; Command being executed
+CERROR = $02        ; Error code
+CDLISTEN = $04      ; Byte combining LISTEN ($20) with our device ID
+CRLISTEN = $05      ; Received command byte to check against our listen byte
+CADDRLO = $07       ; Low byte of address to load to or execute
+CADDRHI = $08       ; High byte of address to load to or execute
+CLBYTE   = $0A      ; Byte being stored to the load address 
+CRSTEP = $0C        ; Receive byte step
+CRBYTE = $0D        ; Received byte
+CREOI = $0E         ; EOI status
+CCOUNT = $27        ; Number of bytes successfully received
+
+;
+; ROM locations
+;
+ROM_IRQ_MAIN = $E00C    ; Location of the ROM's main IRQ vector.  This is where
+                        ; the ROM's IRQ handler is located.
+ROM_IRQ_HW = $E00F      ; Location of the ROM's hardware IRQ handler.  We jump
+                        ; to this when we're done, so it gets a chance to do
+                        ; its thing (as we've probably been a while).
+ROM_IRQ_EXIT = $E012

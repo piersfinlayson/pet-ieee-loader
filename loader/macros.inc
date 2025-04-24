@@ -29,7 +29,14 @@
     ; - Set bit 1 (1): CA1 negative edge triggering (since ATN is active low)
     ; - Set bit 0 (1): Enable interrupt
     LDA UB16_CTRL_A         ; Get current value
-    ORA #$83                ; Set bits 0, 1, and 7
+
+.ifdef new
+    ; I changed this so top bit is no longer being set - not required?
+    ; Bit 1 should be 0 for a negative edge trigger
+    ; Bit 0 should be 1 to enable the interrupt
+.endif
+    AND #$FD                ; Clear bit 1
+    ORA #$01                ; Set bit 0
     STA UB16_CTRL_A         ; Update control register
 .endmacro
 
@@ -37,15 +44,9 @@
     ; De-configure UB16 PIA for ATN interrupts
     LDA UB16_PORT_A         ; Clear any outstanding interrupt
     LDA UB16_CTRL_A         ; Get current control register value
-    AND #$7C                ; Clear bits 0, 1 and 7
+    AND #$FE                ; Clear bit 0 (disable interrupt)
+.ifdef new
+    ; I changed AND #$7C to just clear bit 0 instead
+.endif
     STA UB16_CTRL_A         ; Update control register
-.endmacro
-
-; Stores registers after the interrupt handler
-.macro RESTORE_REGISTERS
-    PLA
-    TAY
-    PLA
-    TAX
-    PLA
 .endmacro

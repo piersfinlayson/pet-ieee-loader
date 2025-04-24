@@ -16,8 +16,9 @@
 ; Licensed under the MIT License.  See [LICENSE] for details.
 
 ; Import the IEEE-488 routines and storage
-.import setup_ieee, restore_ieee, receive_ieee_byte
+.import setup_ieee, restore_ieee, receive_ieee_byte, reset_ieee_var
 .import temp_ub15_port_b, temp_ub15_port_b_ddr
+.import do_test_routine
 
 ; Import the load address
 .import __LOAD_ADDR__
@@ -64,9 +65,25 @@ device_id:
     .assert device_id - code_start = 9, error, "Device ID not at expected offset"
     .byte 30            ; Device ID (0-30, default 30)
 
+test_routine:
+    ; Test routine which can be used to verify behavior by instructing the
+    ; program to execute code at code_start+10
+    .assert test_routine - code_start = 10, error, "Test routine not at expected offset"
+    JMP do_test_routine
+
 orig_irq:
     ; Original IRQ vector storage
     .byte $00, $00
+address:
+    ; Address to use for load/execute commands.  Although we also display on
+    ; screen, we can't rely on that as storage, as it may get overwritten or
+    ; cleared.
+    .word $0000
+irq_stack:
+    ; Storage to use to save registers the main IRQ handler pushed to the
+    ; stack, when we modify what's under it, in order to execute the code
+    ; we're told to load.
+    .byte $00, $00, $00
 
 ; Install our IRQ handler.
 install_irq_handler:
@@ -89,11 +106,12 @@ install_irq_handler:
     ENABLE_IRQ_ATN_IN
 
     ; Clear first 2 bytes of screen and put * on top left
-    LDX #$02
+    LDX #$01
     JSR clear_screen_area
-    PRINT_CHAR $2A, 0   ; Asterisk
+    PRINT_CHAR $2A, CGLOBAL ; Asterisk
 
     CLI                     ; Enable interrupts
+
     RTS                     ; Return to BASIC
 
 ; Restore original IRQ handler - called by SYS <address>.
@@ -128,24 +146,32 @@ restore_irq_int:
     ; Disable ~ATN_IN interrupts
     DISABLE_IRQ_ATN_IN
 
+    ; Restore IEEE-488 stack variables
+    JSR reset_ieee_var
+
+    ; Clear whatever bits of the screen the IRQ handler uses
+    LDX #$0F
+    JSR clear_screen_area
+
     ; Put ! on top left of screen to show we're disabled
-    PRINT_CHAR $21, 0       ; Exclamation mark
+    PRINT_CHAR $21, CGLOBAL ; Exclamation mark
 
     RTS
 
 ; ATN Interrupt Handler - Entry point when ATN line goes active
+; 
+; As we get called from the main interrupt handler (by changing the address at
+; $0090), we don't need to store registers on the stack.
 irq_handler:
-    ; Save accumulator
-    PHA
-
     ; Test if ATN caused the interrupt
     LDA UB16_CTRL_A         ; CA1 caused interrupt is top bit of this register
     BMI @atn                ; Check if ATN interrupt flag is set
     
-    PLA                     ; Restore accumulator
     JMP (orig_irq)          ; Jump to original handler
 
 @atn:
+    PRINT_CHAR $01, CGLOBAL ; Top left of screen now becomes A(TN)
+
     ; Note that A has already been pushed to the stack
 
     ; We have to get NRFD pulled low just as quickly as we can, as once we're
@@ -179,130 +205,118 @@ irq_handler:
     ; Clear the interrupt by reading the data port
     LDA UB16_PORT_A     ; Read data port (clears CA1 interrupt flag)
 
-    ; Save other registers
-    TXA
-    PHA
-    TYA
-    PHA
-
     ; Initialize the rest of the IEEE-488 lines
     JSR setup_ieee
 
     ; Clear first 16 bytes of the (40-col) screen
-    LDX #$0f
+    LDX #$0F
     JSR clear_screen_area
 
     ; Put I on top left of screen to show we're in the interrupt handler
-    PRINT_CHAR $09, 0   ; Top left of screen now becomes I(nterrupt)
+    PRINT_CHAR $09, CGLOBAL ; Top left of screen now becomes I(nterrupt)
+    PRINT_CHAR $2D, CCMD    ; Command becomes -
 
     ; Calculate what the first byte should be to be a LISTEN for us
     LDA device_id       ; Get the configured device ID (default 30)
     ORA #$20            ; OR with $20 to get the LISTEN byte
-    PRINT_A 2           ; Store the LISEN byte in the screen RAM
+    PRINT_A CDLISTEN     ; Store the LISEN byte in the screen RAM
 
     ; Read the first byte from the IEEE-488 port
-    JSR receive_ieee_byte    ; Get the first byte - and check it's a LISTEN
-    STA SCREEN_RAM+3    ; Store it in the screen RAM
-    CMP SCREEN_RAM+2    ; Compare with the byte we stored in screen RAM
-    BNE @atn_exit       ; It wasn't a LISTEN, for us, so exit
+    JSR receive_ieee_byte   ; Get the first byte - and check it's a LISTEN
+    BMI timed_out       ; If A negative, timed out.
+    TXA                 ; Put received byte in A
+    STA SCREEN_RAM+CRLISTEN ; Store received byte in the screen RAM
+    CMP SCREEN_RAM+CDLISTEN ; Compare with the LISTEN byte
+    BNE atn_exit        ; It wasn't a LISTEN, for us, so exit
 
     ; Is was a LISTEN for us, so continue.
-    PRINT_CHAR $08, 0   ; Top left of screen now becomes "H"earing
+    PRINT_CHAR $08, CGLOBAL ; Top left of screen now becomes "H"earing
+
+    ; Get the secondary address byte
+    JSR receive_ieee_byte
+    BMI timed_out       ; If A negative, timed out.
+    ; For now, accept any secondary channel byte.  We should probably have
+    ; checked that ATN was still low - as its only a secondary address byte if
+    ; so.  But we'll assume it is.
 
     ; Get command byte and perform dispatch - loads A with command so M and V
     ; bits are set on return
     JSR receive_ieee_byte
+    BMI timed_out       ; If A negative, timed out.
+    TXA                 ; Put received byte in A
 
     ; Check for execute command (bit 7)
-    BMI @handle_execute
+    BMI handle_execute
     
     ; Check for load command (bit 6)
-    BVS @handle_load
+    BVS handle_load
     
-@atn_exit:
-    PRINT_CHAR $11, 0   ; Top left of screen now becomes Q(uitting)
+atn_exit:
+    PRINT_CHAR $11, CGLOBAL ; Top left of screen now becomes Q(uitting)
 
     ; Unknown command, or we're finished, restore IEEE lines and return from
     ; the interrupt handler
     JSR restore_ieee
 
-    PRINT_CHAR $04, 0   ; Top left of screen now becomes D(one)
+    PRINT_CHAR $04, CGLOBAL ; Top left of screen now becomes D(one)
 
-    RESTORE_REGISTERS
-
-    ; Rather than RTI we have to chain to the original IRQ handler
+    ; Rather than RTI directly, we now call the standard hardware interrupt
+    ; handler, as something probably needs handling from while we were busy.
     JMP (orig_irq)
 
-@handle_execute:
+timed_out:
+    PRINT_CHAR $14, CERROR; Second char now becomes T(imed out)
+    JMP atn_exit        ; Jump to exit
+
+handle_execute:
     JMP do_execute      ; Jump so nothing goes on stack, and we won't return
                         ; anyway
 
-@handle_load:
+handle_load:
     JSR do_load
-    JMP @atn_exit
+    JMP atn_exit
     
-do_execute:
-    ; Put X on top left of screen
-    PRINT_CHAR $18, 0   ; Top left of screen now becomes E(xecute)
+; Read next two bytes from the IEEE-488 bus and store in screen RAM
+;
+; If either byte receive times out, exit
+get_address:
+    ; Read next 2 IEEE-488 bytes, which are the destination address
+    JSR receive_ieee_byte   ; Get address low byte
+    BMI timed_out           ; If A negative, timed out.
+    TXA                     ; Put received byte in A
+    STA address
+    PRINT_A CADDRLO         ; Display on screen
 
-    ; Get execute address
-    JSR receive_ieee_byte    ; Get address low byte
-    PRINT_A 8           ; Store it in the screen RAM
-    JSR receive_ieee_byte    ; Get address high byte
-    PRINT_A 9           ; Store it in the screen RAM
+    JSR receive_ieee_byte   ; Get address high byte
+    BMI timed_out           ; If A negative, timed out.
+    TXA                     ; Put received byte in A
+    STA address+1
+    PRINT_A CADDRHI         ; Display on screen
 
-    ; Restore the IEEE lines
-    JSR restore_ieee
-
-    ; Restore original IRQ handler
-    JSR restore_irq_int
-
-    ; Modify the stack so when RTI is eventually called, the CPU will execute
-    ; code at the required address.
-    RESTORE_REGISTERS   ; Pull the registers we stored at the beginning of our
-                        ; interrupt handler back off the stack (and throw them
-                        ; away)
-    PLA                 ; Pull the CPU flag register stored before IRQ call off
-                        ; the stack (and throw it away)
-    PLA                 ; Pull the interrupt return address off the stack
-    PLA                 ; 2nd byte of return address
-
-    ; Now push the new return address back on the stack
-    LDA SCREEN_RAM+9    ; Get high byte of address
-    PHA                 ; Push it on the stack
-    LDA SCREEN_RAM+8    ; Get low byte of address
-    PHA                 ; Push it on the stack
-    LDA #$00            ; Push the new CPU flag register on the stack
-    PHA                 ; Push it on the stack
-
-    PRINT_CHAR $23, 0   ; Change top left of screen to # to show we're done
-
-    ; Rather than RTI we have to chain to the original IRQ handler
-    JMP (orig_irq)
+    RTS
 
 ; Load handling routine
 do_load:
     ; Put L on top left of screen
-    PRINT_CHAR $0C, 0       ; Top left of screen now becomes L(oad)
+    PRINT_CHAR $0C, CCMD    ; Command now becomes L(oad)
 
-    ; Read next 2 IEEE-488 bytes, which are the destination address
-    JSR receive_ieee_byte   ; Get address low byte
-    PRINT_A 8               ; Display on screen
-    JSR receive_ieee_byte   ; Get address high byte
-    PRINT_A 9               ; Display on screen
+    ; Get load address
+    JSR get_address
 
 @load_loop:
     ; Start of main read loop
-    LDA SCREEN_RAM+8        ; Get low byte of destination
+    LDA address             ; Get low byte of destination
     STA @store+1            ; Modify store instruction to put the byte in the
                             ; correct place
-    LDA SCREEN_RAM+9        ; Get high byte of destination
+    LDA address+1           ; Get high byte of destination
     STA @store+2            ; Modify store instruction to put the byte in the
                             ; correct place
 
     ; Receive byte and store it
     JSR receive_ieee_byte   ; Get the next byte to store
-    PRINT_A 11              ; Display it
+    BMI timed_out           ; If A negative, timed out.
+    TXA                     ; Put received byte in A
+    PRINT_A CLBYTE          ; Display it
 @store:
     STA $FFFE               ; Store the byte - $FFFE is a dummy address which
                             ; has been replaced above
@@ -312,17 +326,75 @@ do_load:
     BNE @load_done          ; If so, we're done
 
     ; Not the last byte, so continue
-    INC SCREEN_RAM+8        ; Increment low byte of destination
+    INC address             ; Increment low byte of address
+    INC SCREEN_RAM+CADDRLO  ; Increment on screen
     BNE @not_page           ; Didn't wrap, so skip high byte increment
 
     ; Low byte wrapped around, so increment high byte
-    INC SCREEN_RAM+9
+    INC address+1           ; Increment high byte of address
+    INC SCREEN_RAM+CADDRHI  ; Increment on screen
 
 @not_page:
     JMP @load_loop      ; Loop back to get the next byte
     
 @load_done:
     RTS
+
+do_execute:
+    ; Put X on top left of screen
+    PRINT_CHAR $18, CCMD    ; Command becomes (e)X(ecute)
+
+    ; Get execute address
+    JSR get_address
+
+.ifdef new
+    ; We should really wait for an unlisten now - this would be cleanest.
+.endif
+
+    ; Restore the IEEE lines
+    JSR restore_ieee
+
+    ; Restore original IRQ handler
+    JSR restore_irq_int
+
+    ; The main IRQ handler, before it called us, pushed the three registers
+    ; to the stack.  We will need to restore the, so pull them now.  See $E442
+    ; for where it pushes the registers onto the stack.
+    PLA
+    STA irq_stack+2
+    PLA
+    STA irq_stack+1
+    PLA
+    STA irq_stack
+
+    ; Modify the stack so when RTI is eventually called, the CPU will execute
+    ; code at the required address.
+    PLA                 ; Pull the CPU flag register stored before IRQ call off
+                        ; the stack (and throw it away)
+    PLA                 ; Pull the interrupt return address off the stack
+    PLA                 ; 2nd byte of return address
+
+    ; Now push the new return address back on the stack
+    LDA address+1       ; Get high byte of address
+    PHA                 ; Push it on the stack
+    LDA address         ; Get low byte of address
+    PHA                 ; Push it on the stack
+    LDA #$00            ; Push the new CPU flag register on the stack
+    PHA                 ; Push it on the stack
+
+    ; Now put the registers back in reverse order.
+    LDA irq_stack
+    PHA
+    LDA irq_stack+1
+    PHA
+    LDA irq_stack+2
+    PHA
+
+    PRINT_CHAR $23, CGLOBAL ; Change top left of screen to # to show we're done
+
+    ; Rather than RTI we have to chain to the original IRQ handler.  Once that
+    ; returns, the code we have pointed the stack to should execute.
+    JMP (orig_irq)
 
 ; Clears the first few bytes of the screen where we can show status
 ;
@@ -333,4 +405,5 @@ clear_screen_area:
     STA SCREEN_RAM,X    ; Clear a byte of screen, 5 cycles
     DEX                 ; 2 cycles
     BNE @loop           ; 3 cycles
-RTS
+    RTS
+
