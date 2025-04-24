@@ -11,6 +11,7 @@ PRG_PREFIX_ADDR ?= $$7BFE
 CA65 = ca65
 LD65 = ld65
 C1541 = c1541
+CHECK_IMM = loader/check_immediate.sh
 
 # Directories
 LOADER_SRC_DIR = loader
@@ -25,12 +26,15 @@ LOADER_SUFFIX = loader
 LOADER_PREFIX = $(LOAD_ADDR_HEX)-$(LOADER_SUFFIX)
 LOADER_MAIN_SRC_FILE = $(LOADER_SRC_DIR)/main.s
 LOADER_IEEE_SRC_FILE = $(LOADER_SRC_DIR)/ieee.s
+LOADER_TEST_SRC_FILE = $(LOADER_SRC_DIR)/test.s
 INC_FILES = $(LOADER_SRC_DIR)/constants.inc $(LOADER_SRC_DIR)/macros.inc
 LOADER_MAIN_OBJ_FILE = $(BUILD_DIR)/main.o
 LOADER_IEEE_OBJ_FILE = $(BUILD_DIR)/ieee.o
-OBJ_FILES = $(LOADER_MAIN_OBJ_FILE) $(LOADER_IEEE_OBJ_FILE)
+LOADER_TEST_OBJ_FILE = $(BUILD_DIR)/test.o
+OBJ_FILES = $(LOADER_MAIN_OBJ_FILE) $(LOADER_IEEE_OBJ_FILE) $(LOADER_TEST_OBJ_FILE)
 PRG_FILE = $(BUILD_DIR)/$(LOADER_PREFIX).prg
 D64_FILE = $(BUILD_DIR)/$(LOADER_SUFFIX).d64
+TEST_FILE = $(BUILD_DIR)/test.bin
 LINK_TEMPLATE_FILE = $(LOADER_SRC_DIR)/template.cfg
 LINK_FILE = $(BUILD_DIR)/config.cfg
 MAP_FILE = $(BUILD_DIR)/$(LOADER_PREFIX).map
@@ -48,7 +52,10 @@ LD65_FLAGS =
 # Default target
 .PHONY: all
 all: loader sender
-loader: $(PRG_FILE) $(D64_FILE)
+loader: check_immediate $(PRG_FILE) $(D64_FILE) $(TEST_FILE)
+
+check_immediate:
+	@$(CHECK_IMM) $(LOADER_SRC_DIR)/*.s || (echo "Immediate mode errors found!" && exit 1)
 
 # Create build directory
 $(BUILD_DIR):
@@ -58,6 +65,8 @@ $(BUILD_DIR):
 $(LOADER_MAIN_OBJ_FILE): $(LOADER_MAIN_SRC_FILE) $(INC_FILES) | $(BUILD_DIR)
 	@$(CA65) $(CA65_FLAGS) $< -o $@
 $(LOADER_IEEE_OBJ_FILE): $(LOADER_IEEE_SRC_FILE) $(INC_FILES) | $(BUILD_DIR)
+	@$(CA65) $(CA65_FLAGS) $< -o $@
+$(LOADER_TEST_OBJ_FILE): $(LOADER_TEST_SRC_FILE) $(INC_FILES) | $(BUILD_DIR)
 	@$(CA65) $(CA65_FLAGS) $< -o $@
 
 # Generate the config file from the template
@@ -77,6 +86,11 @@ $(PRG_FILE): $(OBJ_FILES) $(LINK_FILE) Makefile
 $(D64_FILE): $(PRG_FILE) Makefile
 	@$(C1541) -format "$(DISK_NAME),01" d64 $(D64_FILE) -write $(PRG_FILE) $(LOADER_PREFIX) > /dev/null
 	@echo "Created D64 image:"
+	@ls -l $@
+
+$(TEST_FILE): $(LOADER_TEST_OBJ_FILE) Makefile
+	@$(LD65) -t none $(LD65_FLAGS) $(LOADER_TEST_OBJ_FILE) -o $@
+	@echo "Built test binary:"
 	@ls -l $@
 
 # Force sender targets to always run by making them phony targets
