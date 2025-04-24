@@ -163,6 +163,8 @@ irq_handler:
     ; - The CPU probably takes 10-20 cycles to get into the interrupt handler.
     ;
     ; This totals around 60-70 cycles/us.
+    ;
+    ; ~NRFD_OUT is PB1 of UB15
     LDA UB15_PORT_B_DDR
     STA temp_ub15_port_b_ddr ; Save original value
     ORA #$02                ; Set bit 1

@@ -41,8 +41,8 @@ UB16_CTRL_B = $E823     ; 59427
 ; http://www.zimmers.net/anonftp/pub/cbm/schematics/computers/pet/8032/8032029-03.gif
 UB15_PORT_B = $E840     ; 59456
 UB15_PORT_A = $E841     ; 59457
-UB15_PORT_B_DDR = $E842  ; 59458
-UB15_PORT_A_DDR = $E843  ; 59459
+UB15_PORT_B_DDR = $E842 ; 59458
+UB15_PORT_A_DDR = $E843 ; 59459
 
 ; IEEE-488 data lines
 ; - Data input lines (DI) are ports A of UB16 6520

@@ -71,12 +71,12 @@ setup_ieee:
     AND #$C7                ; Clear bits 3, 4 and 5
     STA UB12_CTRL_A         ; Update control register
 
-    ; Set NDAC low (ready for first byte)
-    ; - NDAC is UB16 CA2.
+    ; Set ~NDAC_OUT low (ready for first byte)
+    ; - ~NDAC_OUT is UB16 CA2.
     ; - To set to low output we want bits 5-3 to be 110
     LDA UB16_CTRL_A         ; UB16_CTRL_A ($E821)
     STA temp_ub16_ctrl_a    ; Save it
-    ORA #$30                ; Set bits
+    ORA #$30                ; Set bits 5/4
     AND #$F7                ; Clear bit 3
     STA UB16_CTRL_A
 
@@ -87,8 +87,9 @@ setup_ieee:
 ; Undoes setup_ieee & also releases NRFD (which allows other devices to
 ; communicate on the bus, should they need to))
 restore_ieee:
-    ; Put NRFD_OUT back to its original state, but set it to high in case it's
-    ; an output
+    ; Put ~NRFD_OUT back to its original state, but set it to high in case it's
+    ; an output.  We originally reconfigured ~NRFD_OUT in main directly, not
+    ; setup_ieee for performance reasons.
     LDA temp_ub15_port_b_ddr ; Get original value
     STA UB15_PORT_B_DDR     ; Update DDR
     LDA temp_ub15_port_b    ; Get original value
