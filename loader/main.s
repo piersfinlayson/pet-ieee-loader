@@ -90,6 +90,16 @@ install_irq_handler:
     ; Disable interrupts
     SEI                     ; Disable interrupts
 
+    JSR install_irq_int
+
+    CLI                     ; Enable interrupts
+
+    RTS                     ; Return to BASIC
+
+; Actually install the interrupt handler
+;
+; Must (and can be) called with interrupts disabled
+install_irq_int:
     ; Save original IRQ vector (in orig_irq)
     LDA SYSTEM_IRQ
     STA orig_irq
@@ -110,9 +120,7 @@ install_irq_handler:
     JSR clear_screen_area
     PRINT_CHAR $2A, CGLOBAL ; Asterisk
 
-    CLI                     ; Enable interrupts
-
-    RTS                     ; Return to BASIC
+    RTS
 
 ; Restore original IRQ handler - called by SYS <address>.
 ;
@@ -340,6 +348,27 @@ do_load:
 @load_done:
     RTS
 
+; Execute the code at a given address
+;
+; Assumes the code we've been told to execute will RTS after its done.
+;
+; Operation:
+; - Load the address from the IEEE-488 bus
+; - Restore IEEE-488 lines to their usual state
+; - Deregister our interrupt handler and replace with normal one
+; - Modify our own routine so we'll JSR to the address given
+; - Clear the interrupt context
+; - JSR to the address given
+; - Set interrupt context (disable interrupts)
+; - Re-install our interrupt handler
+; - Clear interrupt context
+; - Reset the stack pointer to a known good state for BASIC
+; - Warn restart BASIC without clearing RAM
+;
+; This leaves RAM in whatever state it was before we started (except for the
+; address we modified in our own code), and bar any changes made by the code we
+; were told to execute.  It also leaves this loader routine in a state where we
+; can be called again, and will work as expected.
 do_execute:
     ; Put X on top left of screen
     PRINT_CHAR $18, CCMD    ; Command becomes (e)X(ecute)
@@ -357,44 +386,38 @@ do_execute:
     ; Restore original IRQ handler
     JSR restore_irq_int
 
-    ; The main IRQ handler, before it called us, pushed the three registers
-    ; to the stack.  We will need to restore the, so pull them now.  See $E442
-    ; for where it pushes the registers onto the stack.
-    PLA
-    STA irq_stack+2
-    PLA
-    STA irq_stack+1
-    PLA
-    STA irq_stack
-
-    ; Modify the stack so when RTI is eventually called, the CPU will execute
-    ; code at the required address.
-    PLA                 ; Pull the CPU flag register stored before IRQ call off
-                        ; the stack (and throw it away)
-    PLA                 ; Pull the interrupt return address off the stack
-    PLA                 ; 2nd byte of return address
-
-    ; Now push the new return address back on the stack
+    ; Modify execute address below
     LDA address+1       ; Get high byte of address
-    PHA                 ; Push it on the stack
+    STA @execute+2
     LDA address         ; Get low byte of address
-    PHA                 ; Push it on the stack
-    LDA #$00            ; Push the new CPU flag register on the stack
-    PHA                 ; Push it on the stack
-
-    ; Now put the registers back in reverse order.
-    LDA irq_stack
-    PHA
-    LDA irq_stack+1
-    PHA
-    LDA irq_stack+2
-    PHA
+    STA @execute+1
 
     PRINT_CHAR $23, CGLOBAL ; Change top left of screen to # to show we're done
 
-    ; Rather than RTI we have to chain to the original IRQ handler.  Once that
-    ; returns, the code we have pointed the stack to should execute.
-    JMP (orig_irq)
+    ; Clear interrupts befor executing the code
+    CLI
+
+    ; Actually execute the code we're been instructed to.
+@execute:
+    JSR $FFFF
+
+    ; Enter interrupt context
+    SEI
+
+    ; Set up our interrupt handler again
+    JSR install_irq_int
+
+    ; Clear interrupt context
+    CLI
+
+    ; Reset the stack pointer to known good state for BASIC.  This is done by
+    ; the stock ROM boot initialization at $D3B6, called by $FD46 with the
+    ; power on reset entry routine at $FD16.
+    LDX #$FB            ; Standard BASIC stack pointer value
+    TXS                 ; Reset stack without clearing memory
+    
+    ; Reinitialize just the screen editor
+    JMP (SYSTEM_NMI)    ; Restart BASIC without clearing RAM - this is 
 
 ; Clears the first few bytes of the screen where we can show status
 ;

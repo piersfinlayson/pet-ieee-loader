@@ -9,7 +9,8 @@
 ;
 ; Zero page addresses
 ;
-SYSTEM_IRQ = $90
+SYSTEM_IRQ = $90        ; Hardware IRQ handler, which we will subvert
+SYSTEM_NMI = $94        ; Warm restarts basic, we call after we execute code
 
 ;
 ; Memory locations
@@ -75,10 +76,3 @@ CRSTEP = $0C        ; Receive byte step
 CRBYTE = $0D        ; Received byte
 CREOI = $0E         ; EOI status
 CCOUNT = $27        ; Number of bytes successfully received
-
-;
-; ROM locations
-;
-ROM_IRQ_MAIN = $E00C    ; Location of the ROM's main IRQ vector.  This is where
-                        ; the ROM's IRQ handler is located.
-ROM_IRQ_EXIT = $E012
