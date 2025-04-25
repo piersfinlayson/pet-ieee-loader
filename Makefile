@@ -54,7 +54,7 @@ LD65_FLAGS =
 all: loader sender
 loader: check_immediate $(PRG_FILE) $(D64_FILE) $(TEST_FILE)
 
-check_immediate:
+check_immediate: $(CHECK_IMM)
 	@$(CHECK_IMM) $(LOADER_SRC_DIR)/*.s || (echo "Immediate mode errors found!" && exit 1)
 
 # Create build directory

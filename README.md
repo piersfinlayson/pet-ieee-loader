@@ -33,7 +33,7 @@ Pre-built Loader and Sender binaries are available on the [github releases](http
 
 1. Compile the loader program using the provided Makefile:
    ```bash
-   sudo apt-get -y install cc65 make vice
+   sudo apt-get -y install cc65 gawk make vice
    make loader
    ```
 
