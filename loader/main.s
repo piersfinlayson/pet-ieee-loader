@@ -257,7 +257,8 @@ irq_handler:
     BMI handle_execute
     
     ; Check for load command (bit 6)
-    BVS handle_load
+    ASL A               ; Shift left so bit 6 becomes bit 7
+    BMI handle_load     ; Now test bit 7
     
 atn_exit:
     PRINT_CHAR $11, CGLOBAL ; Top left of screen now becomes Q(uitting)
@@ -323,6 +324,7 @@ do_load:
     ; Receive byte and store it
     JSR receive_ieee_byte   ; Get the next byte to store
     BMI timed_out           ; If A negative, timed out.
+    PHA                     ; Push A onto the stack for later EOI usage
     TXA                     ; Put received byte in A
     PRINT_A CLBYTE          ; Display it
 @store:
@@ -330,8 +332,9 @@ do_load:
                             ; has been replaced above
 
     ; Check if this was the last byte
-    CPX #$00                
-    BNE @load_done          ; If so, we're done
+    PLA                     ; Pull A from the stack
+    ASL A                   ; Shift A left 1 bit so we can test EOI at bit 7
+    BMI @load_done          ; EOI set, so we're done
 
     ; Not the last byte, so continue
     INC address             ; Increment low byte of address
@@ -399,7 +402,7 @@ do_execute:
 
     ; Actually execute the code we're been instructed to.
 @execute:
-    JSR $FFFF
+    JSR $FFFE
 
     ; Enter interrupt context
     SEI
