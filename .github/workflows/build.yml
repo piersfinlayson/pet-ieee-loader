@@ -15,7 +15,7 @@ jobs:
     - uses: actions/checkout@v3
       
     - name: Install CA65 and VICE dependencies
-      run: sudo apt-get update && sudo apt-get install -y cc65 make vice
+      run: sudo apt-get update && sudo apt-get install -y cc65 gawk make vice
     
     - name: Set up Rust
       uses: actions-rs/toolchain@v1
