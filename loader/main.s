@@ -18,7 +18,6 @@
 ; Import the IEEE-488 routines and storage
 .import setup_ieee, restore_ieee, receive_ieee_byte, reset_ieee_var
 .import temp_ub15_port_b, temp_ub15_port_b_ddr
-.import do_test_routine
 
 ; Import the load address
 .import __LOAD_ADDR__
@@ -65,12 +64,6 @@ device_id:
     .assert device_id - code_start = 9, error, "Device ID not at expected offset"
     .byte 30            ; Device ID (0-30, default 30)
 
-test_routine:
-    ; Test routine which can be used to verify behavior by instructing the
-    ; program to execute code at code_start+10
-    .assert test_routine - code_start = 10, error, "Test routine not at expected offset"
-    JMP do_test_routine
-
 orig_irq:
     ; Original IRQ vector storage
     .byte $00, $00
@@ -87,10 +80,12 @@ irq_stack:
 
 ; Install our IRQ handler.
 install_irq_handler:
-    ; Disable interrupts
     SEI                     ; Disable interrupts
 
-    JSR install_irq_int
+    JSR fix_basic           ; Allows BASIC to work again now we have a machine
+                            ; code program in memory
+
+    JSR install_irq_int     ; Install our IRQ handler
 
     CLI                     ; Enable interrupts
 
@@ -100,6 +95,8 @@ install_irq_handler:
 ;
 ; Must (and can be) called with interrupts disabled
 install_irq_int:
+    PRINT_CHAR $13, CGLOBAL ; Print S(etup) on the screen
+
     ; Save original IRQ vector (in orig_irq)
     LDA SYSTEM_IRQ
     STA orig_irq
@@ -179,6 +176,9 @@ irq_handler:
 
 @atn:
     PRINT_CHAR $01, CGLOBAL ; Top left of screen now becomes A(TN)
+    TSX
+    TXA
+    PRINT_A CSTACKP1        ; Print stack pointer on entry
 
     ; Note that A has already been pushed to the stack
 
@@ -188,15 +188,15 @@ irq_handler:
     ; May get it low, and then high again, before we get the chance to pull it
     ; low, and then we will miss the data.
     ;
-    ; Note we can only use the Accumulator at this stage
+    ; The xum1541 gives us slightly more than 90us to get NRFD low, after
+    ; pulling ATN low.  This code, including the time for the CPU to service
+    ; the interrupt, takes slightly under that - around 80-85us.
     ;
-    ; We don't JSR to a routine to handle this in order to optimise speed.
+    ; We don't use a subroutine to do this, to optimise speed.
     ;
-    ; - This sequence takes 6+6+2+6+6+6+2+6 = 40 cycles.
-    ; - The irq_handler takes 2+6+3 = 11 cycles.
-    ; - The CPU probably takes 10-20 cycles to get into the interrupt handler.
-    ;
-    ; This totals around 60-70 cycles/us.
+    ; We could speed up further by settins NRFD_OUT to output in the
+    ; initialization routine, but we can't guarantee it won't have been changed
+    ; since then.
     ;
     ; ~NRFD_OUT is PB1 of UB15
     LDA UB15_PORT_B_DDR
@@ -208,13 +208,21 @@ irq_handler:
     AND #$FD                ; Clear bit 1
     STA UB15_PORT_B         ; Set NRFD low (not ready for data)
 
-    ; Now we've pulled NRFD low we can take our time.
+    ; Now we've pulled NRFD low we can take more time about things.
 
-    ; Clear the interrupt by reading the data port
-    LDA UB16_PORT_A     ; Read data port (clears CA1 interrupt flag)
+    ; Ideally at this point we'd check if ATN is still low or has gone high.
+    ; We can't do this as CA1 state can't be read directly.  We could
+    ; reconfigure interrupts to trigger on a positive transition, but that
+    ; leaves a window condition.  So, we have to proceed under the assumption
+    ; that ATN is still low.  We will handle this, within receive_ieee_byte, by
+    ; dealing running timers, so we don't end up in an infinite loop.
 
     ; Initialize the rest of the IEEE-488 lines
     JSR setup_ieee
+
+    ; Clear the interrupt - do this after setting up the IEEE-488 lines as it
+    ; disables the ATN interrupt.  It'll get re-enabled later.
+    CLEAR_IRQ_ATN_IN
 
     ; Clear first 16 bytes of the (40-col) screen
     LDX #$0F
@@ -269,12 +277,17 @@ atn_exit:
 
     PRINT_CHAR $04, CGLOBAL ; Top left of screen now becomes D(one)
 
+return:
+    TSX
+    TXA
+    PRINT_A CSTACKP2        ; Print stack pointer on exit
+
     ; Rather than RTI directly, we now call the standard hardware interrupt
     ; handler, as something probably needs handling from while we were busy.
     JMP (orig_irq)
 
 timed_out:
-    PRINT_CHAR $14, CERROR; Second char now becomes T(imed out)
+    PRINT_CHAR $94, CERROR  ; Error char now becomes T(imed out), reversed
     JMP atn_exit        ; Jump to exit
 
 handle_execute:
@@ -372,37 +385,52 @@ do_load:
 ; address we modified in our own code), and bar any changes made by the code we
 ; were told to execute.  It also leaves this loader routine in a state where we
 ; can be called again, and will work as expected.
+temp_execute:
+    .byte $00
 do_execute:
+    ; Store the accumulator (which contains the command received)
+    STA temp_execute
+
     ; Put X on top left of screen
     PRINT_CHAR $18, CCMD    ; Command becomes (e)X(ecute)
 
-    ; Get execute address
+    ; Figure out if we're executing a BASIC program or machine code
+    LDA temp_execute
+    LSR A                   ; Shift right so bit 0 becomes carry bit
+    BCS @basic              ; If carry set, we're executing BASIC
+
+    ; We're executing machine code.  Get execute address.
     JSR get_address
 
-.ifdef new
-    ; We should really wait for an unlisten now - this would be cleanest.
-.endif
+    ; Modify execute address below
+    LDA address+1           ; Get high byte of address
+    STA @execute+2
+    LDA address             ; Get low byte of address
+    STA @execute+1
 
+    ; No address required or expected when running a BASIC program
+@basic:
     ; Restore the IEEE lines
     JSR restore_ieee
 
     ; Restore original IRQ handler
     JSR restore_irq_int
 
-    ; Modify execute address below
-    LDA address+1       ; Get high byte of address
-    STA @execute+2
-    LDA address         ; Get low byte of address
-    STA @execute+1
+    LDA temp_execute
+    LSR A
+    BCS @execute_basic      ; If carry set, we're executing BASIC
 
-    PRINT_CHAR $23, CGLOBAL ; Change top left of screen to # to show we're done
+    ; Not basic
 
-    ; Clear interrupts befor executing the code
+    ; Clear interrupts before executing
     CLI
 
-    ; Actually execute the code we're been instructed to.
 @execute:
     JSR $FFFE
+
+    ; We can't guarantee the code we were told to execute will return to us,
+    ; but if it does, we now reset up our interrupt handler so we can handle
+    ; more commands.
 
     ; Enter interrupt context
     SEI
@@ -410,17 +438,101 @@ do_execute:
     ; Set up our interrupt handler again
     JSR install_irq_int
 
-    ; Clear interrupt context
-    CLI
+    JMP return
 
-    ; Reset the stack pointer to known good state for BASIC.  This is done by
-    ; the stock ROM boot initialization at $D3B6, called by $FD46 with the
-    ; power on reset entry routine at $FD16.
-    LDX #$FB            ; Standard BASIC stack pointer value
-    TXS                 ; Reset stack without clearing memory
+@temp_basic:
+    .byte $00, $00, $00, $00
+
+@execute_basic:
+    ; Fix BASIC in case a program has been loaded by us
+    JSR fix_basic
+
+    ; BASIC doesn't return to us when done - and our interrupt handler has been
+    ; unloaded.  The user will have to reload afterwards if they want to use us
+    ; again.
+
+    LDX #$F8                ; Reset stack to what BASIC expects
+    TXS
+    TXA
+    PRINT_A CSTACKP2        ; Print stack pointer on exit
+
+    PRINT_CHAR $23, CGLOBAL ; Change top left of screen to # to show we're done
+    PRINT_CHAR $02, CCMD2
+
+    ; Execute program
+    JMP BASIC_NEWSTT        ; Start execution
+
+fix_basic:
+    ; Set top of memory based on where our machine code lives
+    LDA #<__LOAD_ADDR__
+    STA ZP_BASIC_END
+    LDA #>__LOAD_ADDR__
+    STA ZP_BASIC_END+1
     
-    ; Reinitialize just the screen editor
-    JMP (SYSTEM_NMI)    ; Restart BASIC without clearing RAM - this is 
+    ; Fix program pointers
+    LDA #<BASIC_START
+    STA ZP_BASIC_START
+    LDA #>BASIC_START
+    STA ZP_BASIC_START+1
+    
+    ; Relink program
+    JSR BASIC_LINKPRG
+    
+    ; Step 4: Find end of program
+    LDA ZP_BASIC_START
+    LDY ZP_BASIC_START+1
+    
+@findend:
+    STA ZP_PTR          ; Store current pointer
+    STY ZP_PTR+1        ; Store current pointer
+    LDY #$00
+    LDA (ZP_PTR),Y      ; Get link low byte
+    TAX                 ; Save it
+    INY
+    LDA (ZP_PTR),Y      ; Get link high byte
+    TAY                 ; Y = high byte
+    TXA                 ; A = low byte
+    BNE @findend        ; Continue if we're not at $0000
+    CPY #$00
+    BNE @findend        ; Continue if we're not at $0000
+    
+    ; Set variables start after program 
+    CLC
+    LDA ZP_PTR
+    ADC #$02            ; Skip past the link
+    STA ZP_VAR_START
+    LDA ZP_PTR+1
+    ADC #$00            ; 16-bit arithmetic - includes any carry byte
+    STA ZP_VAR_START+1
+    
+    ; Arrays start at same place initially
+    LDA ZP_VAR_START
+    STA ZP_ARRAY_START
+    LDA ZP_VAR_START+1
+    STA ZP_ARRAY_START+1
+    
+    ; End of variables
+    LDA ZP_ARRAY_START
+    STA ZP_VAR_END
+    LDA ZP_ARRAY_START+1
+    STA ZP_VAR_END+1
+    
+    ; String storage starts at top of memory
+    LDA ZP_BASIC_END
+    STA ZP_STRING_START
+    LDA ZP_BASIC_END+1
+    STA ZP_STRING_START+1
+    
+    ; Step 8: Reset I/O and other flags ---
+    JSR ROM_CLALL       ; Close all I/O channels and files
+    LDA #$00
+    STA ZP_ACTIVE_IO
+    STA ZP_PRINT_FLAGS
+    
+    ; Reset TXTPTR
+    JSR BASIC_STXPT     ; STXPT - Reset text pointer
+    
+    RTS
 
 ; Clears the first few bytes of the screen where we can show status
 ;

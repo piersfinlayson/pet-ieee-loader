@@ -50,3 +50,15 @@
 .endif
     STA UB16_CTRL_A         ; Update control register
 .endmacro
+
+.macro CLEAR_IRQ_ATN_IN
+    LDA UB16_CTRL_A     ; Get current control register value
+    PHA                 ; Save it
+    ORA #$04            ; Set bit 2 to enable ORA on PORT A
+    STA UB16_CTRL_A     ; Update control register
+
+    LDA UB16_PORT_A     ; Read data port (clears CA1 interrupt flag)
+
+    PLA                 ; Restore control register
+    STA UB16_CTRL_A
+.endmacro

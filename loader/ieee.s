@@ -111,6 +111,8 @@ setup_ieee:
 ;
 ; Undoes setup_ieee & also releases NRFD (which allows other devices to
 ; communicate on the bus, should they need to))
+;
+; A is modified, X and Y are untouched
 restore_ieee:
     ; Put ~NRFD_OUT back to its original state, but set it to high in case it's
     ; an output.  We originally reconfigured ~NRFD_OUT in main directly, not
@@ -150,7 +152,7 @@ restore_ieee:
     STA UB16_PORT_B     ; Write to DDR
 
     PLA                 ; Get control register value
-    STX UB16_CTRL_B     ; Restore ctrl register
+    STA UB16_CTRL_B     ; Restore ctrl register
 
     ; Restore DI1-8 to their previous state
     LDA UB16_CTRL_A     ; Get current control register value
@@ -162,7 +164,7 @@ restore_ieee:
     STA UB16_PORT_A     ; Write to DDR
 
     PLA                 ; Get control register value
-    STX UB16_CTRL_A     ; Restore ctrl register
+    STA UB16_CTRL_A     ; Restore ctrl register
 
     ENABLE_IRQ_ATN_IN
 

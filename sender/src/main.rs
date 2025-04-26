@@ -13,6 +13,7 @@ use std::path::Path;
 use xum1541::{BusBuilder, DeviceChannel, Error as XumError};
 
 const CMD_EXECUTE: u8 = 0x80;
+const CMD_RUN: u8 = 0x81;
 const CMD_LOAD: u8 = 0x40;
 // Constants for command bytes
 #[derive(Debug)]
@@ -65,7 +66,7 @@ impl From<std::io::Error> for AppError {
 #[command(group(
     ArgGroup::new("command")
         .required(true)
-        .args(["execute", "load"]),
+        .args(["execute", "run", "load"]),
 ))]
 #[allow(clippy::struct_excessive_bools)]
 struct CliArgs {
@@ -74,24 +75,24 @@ struct CliArgs {
     device: String,
 
     /// Send execute command to the PET
-    #[arg(short = 'x', long)]
+    #[arg(short = 'x', long, conflicts_with = "file", requires = "addr")]
     execute: bool,
 
+    /// `RUN` command - runs a BASIC program
+    #[arg(short = 'r', long, conflicts_with = "addr", conflicts_with = "file")]
+    run: bool,
+
     /// Send load command to the PET
-    #[arg(short, long)]
+    #[arg(short, long, requires = "file")]
     load: bool,
 
     /// The 16-bit hex address (without 0x or $ prefix)
-    #[arg(short, long, required_unless_present = "use_file_addr")]
+    #[arg(short, long)]
     addr: Option<String>,
 
     /// File containing data to load (required for load)
     #[arg(requires = "load")]
     file: Option<String>,
-
-    /// Use the first two bytes of the file as the load address
-    #[arg(long, requires = "load", conflicts_with = "addr")]
-    use_file_addr: bool,
 
     /// Enable verbose output
     #[arg(short, long)]
@@ -123,14 +124,20 @@ fn main() -> Result<(), AppError> {
             u16::from_str_radix(addr_str, 16)
                 .map_err(|_| AppError::InvalidAddress(addr_str.clone()))?,
         )
-    } else if args.use_file_addr {
-        // Address will be parsed from file later
-        None
-    } else {
+    } else if args.execute {
         return Err(AppError::CommandError(
-            "Either --addr or --use-file-addr must be specified".to_string(),
+            "--addr must be specified with --execute".to_string(),
         ));
+    } else {
+        None
     };
+
+    // Belt and braces - Clap args should have caught this.
+    if address.is_some() && args.run {
+        return Err(AppError::CommandError(
+            "Cannot use --addr with --run command".to_string(),
+        ))
+    }
 
     // Get file_name
     let file_path = if args.load {
@@ -140,6 +147,13 @@ fn main() -> Result<(), AppError> {
     } else {
         None
     };
+
+    // Belt and braces - Clap args should have caught this.
+    if file_path.is_some() && !args.load {
+        return Err(AppError::CommandError(
+            "File path can only be used with load command".to_string(),
+        ));
+    }
 
     // Connect to the XUM1541 device via USB
     let mut bus = BusBuilder::new().build().map_err(AppError::from)?;
@@ -184,10 +198,7 @@ fn main() -> Result<(), AppError> {
             if let Some(addr) = address {
                 println!("Sending LOAD command for file {file_path} to address ${addr:04X}...");
             } else {
-                println!("Sending LOAD command for file {file_path}...");
-            }
-            if args.use_file_addr {
-                println!("Using first two bytes of file as load address");
+                println!("Sending LOAD command for file {file_path} using first two bytes as load address");
             }
         }
 
@@ -195,9 +206,10 @@ fn main() -> Result<(), AppError> {
             &mut bus,
             address,
             file_path,
-            args.use_file_addr,
             args.verbose,
         )?;
+    } else if args.run {
+        run_command(&mut bus)?;
     }
 
     if args.verbose {
@@ -210,6 +222,14 @@ fn main() -> Result<(), AppError> {
     if args.verbose {
         println!("Operation completed successfully");
     }
+
+    Ok(())
+}
+
+fn run_command(bus: &mut xum1541::Bus) -> Result<(), AppError> {
+    // Send the RUN command
+    let command_sequence = [CMD_RUN];
+    bus.write(&command_sequence).map_err(AppError::from)?;
 
     Ok(())
 }
@@ -228,7 +248,6 @@ fn load_command(
     bus: &mut xum1541::Bus,
     address: Option<u16>,
     file_path: &str,
-    use_file_addr: bool,
     verbose: bool,
 ) -> Result<(), AppError> {
     // xum1541 supports sending up to 32768 bytes of data.  We require 5 bytes
@@ -256,7 +275,10 @@ fn load_command(
     }
 
     // Determine load address and data
-    let (load_address, data_to_load, shortened) = if use_file_addr && data.len() >= 2 {
+    let (load_address, data_to_load, shortened) = if let Some(addr) = address {
+        // Use the provided address and the entire file
+        (addr, &data[..], false)
+    } else {
         // Use the first two bytes from the file as the load address (low byte first)
         let addr = u16::from_le_bytes([data[0], data[1]]);
 
@@ -265,14 +287,6 @@ fn load_command(
         }
 
         (addr, &data[2..], true)
-    } else {
-        // Use the provided address and the entire file
-        let addr = address.ok_or_else(|| {
-            AppError::CommandError(
-                "Address required for load command when not using file address".to_string(),
-            )
-        })?;
-        (addr, &data[..], false)
     };
 
     let addr_low = (load_address & 0xFF) as u8;

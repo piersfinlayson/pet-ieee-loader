@@ -15,7 +15,29 @@ SYSTEM_NMI = $94        ; Warm restarts basic, we call after we execute code
 ;
 ; Memory locations
 ;
+BASIC_START = $0401     ; Start of BASIC program area
 SCREEN_RAM = $8000
+
+;
+; ROM locations
+;
+BASIC_LINKPRG = $B4B6
+BASIC_STXPT = $B622
+BASIC_NEWSTT = $B74A
+ROM_CLALL = $FFE7
+
+;
+; Zeropage Locations
+;
+ZP_PRINT_FLAGS = $0D
+ZP_ACTIVE_IO = $10
+ZP_BASIC_START = $28
+ZP_VAR_START = $2A
+ZP_ARRAY_START = $2C
+ZP_VAR_END = $2E
+ZP_STRING_START = $30
+ZP_BASIC_END = $34
+ZP_PTR = $5C
 
 ;
 ; Register addresses
@@ -75,4 +97,7 @@ CLBYTE   = $0A      ; Byte being stored to the load address
 CRSTEP = $0C        ; Receive byte step
 CRBYTE = $0D        ; Received byte
 CREOI = $0E         ; EOI status
+CCMD2 = $24         ; Final command executed
+CSTACKP1 = $25      ; Stack pointer on entry to IRQ handler
+CSTACKP2 = $26      ; Stack pointer on exit from IRQ handler
 CCOUNT = $27        ; Number of bytes successfully received
