@@ -5,6 +5,25 @@
 ///
 /// Specifically, it can be used to send binary data to a Commodore PET via
 /// IEEE-488 and trigger the PET to execute it.
+/// 
+/// It supports three commands:
+/// - `--load` - Loads a file into the PET's memory
+///     - To load a PRG file, to the location stored in the first two bytes of
+///       the file, you just need `--load <FILENAME>`, and supports both BASIC
+///       and machine code files.
+///     - To load a binary file to a specific address, use `--load --addr
+///       <hex_addr> <FILENAME>` - `hex_addr` should be a 4 digit hex address
+///       without an 0x or $ prefix.
+/// - `--execute` - Execute a machine code routine (using JSR) at a specified address
+/// - `--Run` - Runs a BASIC program
+/// 
+/// Before running this program you must load the loader program into the PET
+/// execute it using:
+/// 
+/// ```basic
+/// LOAD "7C00-LOADER",8,1
+/// SYS31744
+/// ```
 use clap::{ArgGroup, Parser};
 use std::fmt;
 use std::fs::File;
