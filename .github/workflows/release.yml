@@ -68,6 +68,7 @@ jobs:
       - name: Build Loader
         run: |
           make loader
+          mkdir -p releases
           cp loader/build/7c00-loader.prg releases/
           cp loader/build/loader.d64 releases/
 
