@@ -7,6 +7,11 @@
 ; Licensed under the MIT License.  See [LICENSE] for details.
 
 ;
+; Configuration
+;
+DEFAULT_DEVICE_ID = 30 ; Default device ID for this device
+
+;
 ; Zero page addresses
 ;
 SYSTEM_IRQ = $90        ; Hardware IRQ handler, which we will subvert
@@ -15,8 +20,77 @@ SYSTEM_NMI = $94        ; Warm restarts basic, we call after we execute code
 ;
 ; Memory locations
 ;
+TAPE_BUF_1 = $27A
+TAPE_BUF_2 = $33A
+TAPE_BUF_LEN = $C0
 BASIC_START = $0401     ; Start of BASIC program area
 SCREEN_RAM = $8000
+
+;
+; RAM variable locations
+;
+
+.ifdef RAM_TAPE_BUF
+RAM_START = TAPE_BUF_1
+.assert RAM_END <= (TAPE_BUF_1+TAPE_BUF_LEN), error, "RAM variable section is too large"
+.else
+; Put the RAM variables at the end of the program space.
+.import __RAM_VAR_ADDR__
+RAM_START = __RAM_VAR_ADDR__
+.endif
+
+; Device ID for this device
+;
+; - If using the tape buffer (the ROM variant), `POKE 634,8` is used to set
+;   the device ID.
+; - If using the $7C00 RAM variant with RAM located in the program space, use
+;   `POKE 32720,8` to set the device ID (location $7FD0).
+;
+; It can be set at any time, but this value is only read when processing a
+; LISTEN, so will be ignored until the next LISTEN command.
+;
+; On initialization, the device ID is set to DEFAULT_DEVICE_ID, so if the
+; value is changed before initialization, it will be changed on initialization.
+DEVICE_ID = RAM_START 
+
+; Original IRQ vector storage
+ORIG_IRQ = DEVICE_ID + 1
+ORIG_IRQ_LEN = 2
+
+; Address to use for load/execute commands.  Although we also display on
+; screen, we can't rely on that as storage, as it may get overwritten or
+; cleared.
+ADDRESS = ORIG_IRQ + ORIG_IRQ_LEN
+ADDRESS_LEN = 2
+
+; Addresses used by the IEEE-488 routines.
+; - TEMP_* are only valid for the duration of the interrupt handler
+; - BYTES_PROCESSED is used to store the number of bytes received across all
+;   interrupts, and only reset when the interrupt handler is initialized
+TEMP_UB12_CTRL_A = ADDRESS + ADDRESS_LEN
+TEMP_UB15_PORT_B =      TEMP_UB12_CTRL_A + 1
+TEMP_UB15_PORT_B_DDR =  TEMP_UB12_CTRL_A + 2
+TEMP_UB16_CTRL_A =      TEMP_UB12_CTRL_A + 3
+TEMP_UB16_CTRL_B =      TEMP_UB12_CTRL_A + 4
+TEMP_UB16_DDR_A =       TEMP_UB12_CTRL_A + 5
+TEMP_UB16_DDR_B =       TEMP_UB12_CTRL_A + 6
+TEMP_RECEIVE =          TEMP_UB12_CTRL_A + 7
+BYTES_PROCESSED =       TEMP_UB12_CTRL_A + 8
+
+; Store address - holds pointer to byte to be stored
+STORE_ADDR = BYTES_PROCESSED + 1
+
+; Stores instructions to JSR to the code to be executed, and then JMPs back to
+; continue processing.
+EXEC_JSR = STORE_ADDR + 1
+EXEC_JSR_LEN = 6
+
+STORE_ROUTINE = EXEC_JSR + EXEC_JSR_LEN
+STORE_ROUTINE_LEN = 4
+
+EXEC_TEMP = STORE_ROUTINE + STORE_ROUTINE_LEN
+
+RAM_END = EXEC_TEMP + 1
 
 ;
 ; ROM locations

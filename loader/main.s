@@ -26,11 +26,19 @@
 .include "constants.inc"
 .include "macros.inc"
 
+.ifdef RAM_TAPE_BUF
+.out "Building version using cassette buffer as RAM"
+.else
+.out "Building version using program space as RAM"
+.endif
+
+.ifndef ROM_VERSION
 ; Stored the load address of the program, which turns the binary into a PRG
 ; file.
 .segment "LOAD"
 
 .word __LOAD_ADDR__
+.endif
 
 ;
 ; CODE - start of the program
@@ -55,31 +63,10 @@ handle_irq:
     .assert handle_irq - code_start = 6, error, "handle_irq not at expected offset"
     JMP irq_handler
 
-;
-; Memory used by the program
-;
-device_id:
-    ; To configure the device ID, use POKE __LOAD_ADDR__+9, device_id.  E.g.
-    ;   POKE __LOAD_ADDR__+9,8
-    .assert device_id - code_start = 9, error, "Device ID not at expected offset"
-    .byte 30            ; Device ID (0-30, default 30)
-
-orig_irq:
-    ; Original IRQ vector storage
-    .byte $00, $00
-address:
-    ; Address to use for load/execute commands.  Although we also display on
-    ; screen, we can't rely on that as storage, as it may get overwritten or
-    ; cleared.
-    .word $0000
-irq_stack:
-    ; Storage to use to save registers the main IRQ handler pushed to the
-    ; stack, when we modify what's under it, in order to execute the code
-    ; we're told to load.
-    .byte $00, $00, $00
-
 ; Install our IRQ handler.
 install_irq_handler:
+    JSR init_ram            ; Initialize RAM
+
     SEI                     ; Disable interrupts
 
     JSR install_irq_int     ; Install our IRQ handler
@@ -88,17 +75,29 @@ install_irq_handler:
 
     RTS                     ; Return to BASIC
 
+; Initialize RAM
+;
+; We only bother initialize the RAM which will be read before storing values.
+init_ram:
+    ; Set the default device ID
+    LDA #DEFAULT_DEVICE_ID
+    STA DEVICE_ID
+
+    ; Clear number of bytes processed
+    LDA #$00
+    STA BYTES_PROCESSED
+
 ; Actually install the interrupt handler
 ;
 ; Must (and can be) called with interrupts disabled
 install_irq_int:
     PRINT_CHAR $13, CGLOBAL ; Print S(etup) on the screen
 
-    ; Save original IRQ vector (in orig_irq)
+    ; Save original IRQ vector (in ORIG_IRQ)
     LDA SYSTEM_IRQ
-    STA orig_irq
+    STA ORIG_IRQ
     LDA SYSTEM_IRQ+1
-    STA orig_irq+1
+    STA ORIG_IRQ+1
     
     ; Install our IRQ vector
     LDA #<irq_handler
@@ -137,9 +136,9 @@ restore_irq_sys:
 ; within an interrupt handler context.
 restore_irq_int:
     ; Load the old IRQ vector back to where it came from
-    LDA orig_irq
+    LDA ORIG_IRQ
     STA SYSTEM_IRQ
-    LDA orig_irq+1
+    LDA ORIG_IRQ+1
     STA SYSTEM_IRQ+1
 
     ; At this point we could clear out the stored IRQ vector, but that's
@@ -169,7 +168,7 @@ irq_handler:
     LDA UB16_CTRL_A         ; CA1 caused interrupt is top bit of this register
     BMI @atn                ; Check if ATN interrupt flag is set
     
-    JMP (orig_irq)          ; Jump to original handler
+    JMP (ORIG_IRQ)          ; Jump to original handler
 
 @atn:
     PRINT_CHAR $01, CGLOBAL ; Top left of screen now becomes A(TN)
@@ -197,11 +196,11 @@ irq_handler:
     ;
     ; ~NRFD_OUT is PB1 of UB15
     LDA UB15_PORT_B_DDR
-    STA temp_ub15_port_b_ddr ; Save original value
+    STA TEMP_UB15_PORT_B_DDR ; Save original value
     ORA #$02                ; Set bit 1
     STA UB15_PORT_B_DDR     ; Set NRFD_OUT to output
     LDA UB15_PORT_B         ; Read the port
-    STA temp_ub15_port_b    ; Save original value
+    STA TEMP_UB15_PORT_B    ; Save original value
     AND #$FD                ; Clear bit 1
     STA UB15_PORT_B         ; Set NRFD low (not ready for data)
 
@@ -230,7 +229,7 @@ irq_handler:
     PRINT_CHAR $2D, CCMD    ; Command becomes -
 
     ; Calculate what the first byte should be to be a LISTEN for us
-    LDA device_id       ; Get the configured device ID (default 30)
+    LDA DEVICE_ID       ; Get the configured device ID (default 30)
     ORA #$20            ; OR with $20 to get the LISTEN byte
     PRINT_A CDLISTEN     ; Store the LISEN byte in the screen RAM
 
@@ -281,7 +280,7 @@ return:
 
     ; Rather than RTI directly, we now call the standard hardware interrupt
     ; handler, as something probably needs handling from while we were busy.
-    JMP (orig_irq)
+    JMP (ORIG_IRQ)
 
 timed_out:
     PRINT_CHAR $94, CERROR  ; Error char now becomes T(imed out), reversed
@@ -303,13 +302,13 @@ get_address:
     JSR receive_ieee_byte   ; Get address low byte
     BMI timed_out           ; If A negative, timed out.
     TXA                     ; Put received byte in A
-    STA address
+    STA ADDRESS
     PRINT_A CADDRLO         ; Display on screen
 
     JSR receive_ieee_byte   ; Get address high byte
     BMI timed_out           ; If A negative, timed out.
     TXA                     ; Put received byte in A
-    STA address+1
+    STA ADDRESS+1
     PRINT_A CADDRHI         ; Display on screen
 
     RTS
@@ -322,14 +321,21 @@ do_load:
     ; Get load address
     JSR get_address
 
+    ; Set up routine in RAM to do the store
+    .assert STORE_ROUTINE_LEN = 4, error, "STORE_ROUTINE_LEN incorrect"
+    LDA #$8D                ; STA absolute opcode
+    STA STORE_ROUTINE
+    ; STORE_ROUTINE+1 and 2 will be set up by the load loop below
+    LDA #$60                ; RTS opcode
+    STA STORE_ROUTINE+3
+
+    LDY #$00                ; Used as offset with indirect STA operation
 @load_loop:
     ; Start of main read loop
-    LDA address             ; Get low byte of destination
-    STA @store+1            ; Modify store instruction to put the byte in the
-                            ; correct place
-    LDA address+1           ; Get high byte of destination
-    STA @store+2            ; Modify store instruction to put the byte in the
-                            ; correct place
+    LDA ADDRESS             ; Get low byte of destination
+    STA STORE_ROUTINE+1     ; Set dest address
+    LDA ADDRESS+1           ; Get high byte of destination
+    STA STORE_ROUTINE+2     ; Set dest address
 
     ; Receive byte and store it
     JSR receive_ieee_byte   ; Get the next byte to store
@@ -338,8 +344,8 @@ do_load:
     TXA                     ; Put received byte in A
     PRINT_A CLBYTE          ; Display it
 @store:
-    STA $FFFE               ; Store the byte - $FFFE is a dummy address which
-                            ; has been replaced above
+    ; Store the byte
+    JSR STORE_ROUTINE       ; Call the routine to store the byte
 
     ; Check if this was the last byte
     PLA                     ; Pull A from the stack
@@ -347,12 +353,12 @@ do_load:
     BMI @load_done          ; EOI set, so we're done
 
     ; Not the last byte, so continue
-    INC address             ; Increment low byte of address
+    INC ADDRESS             ; Increment low byte of address
     INC SCREEN_RAM+CADDRLO  ; Increment on screen
     BNE @not_page           ; Didn't wrap, so skip high byte increment
 
     ; Low byte wrapped around, so increment high byte
-    INC address+1           ; Increment high byte of address
+    INC ADDRESS+1           ; Increment high byte of address
     INC SCREEN_RAM+CADDRHI  ; Increment on screen
 
 @not_page:
@@ -382,28 +388,20 @@ do_load:
 ; address we modified in our own code), and bar any changes made by the code we
 ; were told to execute.  It also leaves this loader routine in a state where we
 ; can be called again, and will work as expected.
-temp_execute:
-    .byte $00
 do_execute:
     ; Store the accumulator (which contains the command received)
-    STA temp_execute
+    STA EXEC_TEMP
 
     ; Put X on top left of screen
     PRINT_CHAR $18, CCMD    ; Command becomes (e)X(ecute)
 
     ; Figure out if we're executing a BASIC program or machine code
-    LDA temp_execute
+    LDA EXEC_TEMP
     LSR A                   ; Shift right so bit 0 becomes carry bit
     BCS @basic              ; If carry set, we're executing BASIC
 
     ; We're executing machine code.  Get execute address.
     JSR get_address
-
-    ; Modify execute address below
-    LDA address+1           ; Get high byte of address
-    STA @execute+2
-    LDA address             ; Get low byte of address
-    STA @execute+1
 
     ; No address required or expected when running a BASIC program
 @basic:
@@ -413,7 +411,7 @@ do_execute:
     ; Restore original IRQ handler
     JSR restore_irq_int
 
-    LDA temp_execute
+    LDA EXEC_TEMP
     LSR A
     BCS @execute_basic      ; If carry set, we're executing BASIC
 
@@ -423,11 +421,29 @@ do_execute:
     CLI
 
 @execute:
-    JSR $FFFE
+    ; Create code which will JSR to the address we were given, and then JMP
+    ; back
+    .assert EXEC_JSR_LEN = 6, error, "EXEC_JSR_LEN incorrect"
+    LDA #$6C                ; JMP (indirect)
+    STA EXEC_JSR
+    LDA ADDRESS             ; Get low byte of address
+    STA EXEC_JSR+1
+    LDA ADDRESS+1           ; Get high byte of address
+    STA EXEC_JSR+2
+    LDA #$4C                ; JMP (direct)
+    STA EXEC_JSR+3
+    LDA #<@exec_rtn         ; Get low byte of return address
+    STA EXEC_JSR+4
+    LDA #>@exec_rtn         ; Get high byte of return address
+    STA EXEC_JSR+5
 
-    ; We can't guarantee the code we were told to execute will return to us,
-    ; but if it does, we now reset up our interrupt handler so we can handle
-    ; more commands.
+    ; JMP to the code we created
+    JMP EXEC_JSR
+    
+@exec_rtn:
+    ; We can't guarantee the code we were told to execute will RTS, but if it
+    ; does the code we created will JMP back here and we will now reset up our
+    ; interrupt handler so we can handle more commands.
 
     ; Enter interrupt context
     SEI
@@ -542,3 +558,8 @@ clear_screen_area:
     BNE @loop           ; 3 cycles
     RTS
 
+.ifndef RAM_TAPE_BUF
+; We have to define this segment somewhere, so the linker finds it and checks
+; that the code isn't going to overlap with it.
+.segment "RAM_VAR"
+.endif

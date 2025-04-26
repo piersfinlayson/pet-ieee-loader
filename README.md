@@ -20,7 +20,8 @@ A lightweight utility that turns your Commodore PET into an IEEE-488 device, all
 - Supports machine language and BASIC programs
 - Loads programs 4x faster than using IEEE-488 disk drives
 - Suitable for embedding in development/testing workflows with real hardware
-- Small - fits into less than 1K of RAM
+- Small - program fits into less than 1K of space
+- Can be loaded into RAM, at any address, or into ROM
 - Easy to set up and configure with one-line `BASIC` commands
 - Data received using standard IEEE-488 protocols
 - Includes both loader program for the PET and sender program for linux using xum1541/pico1541 USB-IEEE-488 adapters
@@ -44,8 +45,9 @@ See [📚Dependencies](#dependencies) for an explanation of the required depende
 
    This creates:
     ```bash
-    loader/build/7c00-loader.prg  # The PET program in PRG format, which will load to $7C00
-    loader/build/loader.d64       # A D64 disk image containing the program 
+    loader/build/7c00-loader.prg      # The PET program in PRG format, which will load to $7C00
+    loader/build/loader.d64           # A D64 disk image containing the program 
+    loader/build/9000-loader-rom.bin  # A 4KB ROM image, with the loader program located at $9000
     ```
 
 2. Transfer the resulting binary (`loader/build/pet-ieee-loader.bin`) to your PET using:
@@ -58,6 +60,8 @@ See [📚Dependencies](#dependencies) for an explanation of the required depende
     ```basic
     LOAD"7C00-LOADER",8,1
     ```
+
+Or burn a 4KB 2332 compatible (E)EPROM with `loader/build/9000-loader-rom.bin` to use the loader as a ROM and install in your PET's $9000 ROM slot.
 
 ### 💻Sender
 
@@ -105,6 +109,23 @@ Building the loader program requires the following dependencies:
    ```
    The program automatically restores the original interrupt handler when an execute command is received and actioned.
 
+#### ROM version
+
+To use the $9000 ROM version:
+```basic
+SYS 36864
+```
+
+Change the device ID with:
+```basic
+POKE 634,8
+```
+
+To disable it:
+```basic
+SYS 36867
+```
+
 ### 💻Sender
 
 A sample machine language program is included at `loader/build/test.bin`.
@@ -129,14 +150,24 @@ The PET IEEE Loader works with any of these controllers:
 
 ## 💻PET Compatibility
 
-This program is compiled to load to $7C00-$7FFF, which requires a 32KB PET.  To change where it loads to, change both:
+This program is compiled to load to $7C00-$7FFF, which requires a 32KB PET.  To change where it loads to, change all of:
 ```makefile
-LOAD_ADDR ?= $$7C00
+RAM_LOAD_ADDR ?= $$7C00
+RAM_VAR_ADDR ?= $$7FD0
 PRG_PREFIX_ADDR ?= $$7BFE
 ```
-in the Makefile.  `PRG_PREFIX_ADDR` must be 2 less than `LOAD_ADDR`.
+in the Makefile.
+- `RAM_VAR_ADDR` must be at least 32 bytes from the end of the program space (defined by `MAX_PRG_SIZE`).
+- `PRG_PREFIX_ADDR` must be 2 less than `LOAD_ADDR`.
 
-### 🏠Changing Load Address
+To change the location of the ROM version, change `ROM_LOAD_ADDR` in the Makefile:
+```makefile
+ROM_LOAD_ADDR ?= $$9000
+```
+
+`$A000` is another reasonable value, if your $A000 ROM slot is empty.  Your `SYS` addresses will move accordingly.
+
+### 🏠Changing RAM version Load Address
 
 For example, to load to $3C00, set:
 ```makefile
@@ -193,7 +224,7 @@ The program loads to $7C00 (31744 decimal) by default and takes no more than 1KB
 
 Before running a BASIC program, the loader resets BASIC pointers to by able to handle the loader's presence at $7C00.  Otherwise, BASIC fails to run, as the loader has been loaded into BASIC's string variable space.
 
-Once a BASIC program has been run, the loader is disabled until re-enabled with `SYS 31744`.
+Once a BASIC program has been run, the loader is disabled until re-enabled with `SYS 31744`). 
 
 Once a machine language program is executed, and assuming it returned with `RTS`, the loader is automatically re-enabled.
 

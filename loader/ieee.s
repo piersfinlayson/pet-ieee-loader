@@ -8,31 +8,10 @@
 
 ; Export the IEEE-488 routines and storage
 .export setup_ieee, restore_ieee, receive_ieee_byte, reset_ieee_var
-.export temp_ub15_port_b, temp_ub15_port_b_ddr
 
 ; Include the constants and macros
 .include "constants.inc"
 .include "macros.inc"
-
-; Temporary IEEE-488 storage
-temp_ub12_ctrl_a:
-    .byte $00
-temp_ub15_port_b:
-    .byte $00
-temp_ub15_port_b_ddr:
-    .byte $00
-temp_ub16_ctrl_a:
-    .byte $00
-temp_ub16_ctrl_b:
-    .byte $00
-temp_ub16_ddr_a:
-    .byte $00
-temp_ub16_ddr_b:
-    .byte $00
-temp_receive:
-    .byte $00
-bytes_processed:
-    .byte $00
 
 ; Reset IEEE-488 variables
 ;
@@ -40,7 +19,7 @@ bytes_processed:
 ; beyond the context of a single interrupt
 reset_ieee_var:
     LDA #$00
-    STA bytes_processed
+    STA BYTES_PROCESSED
     RTS
 
 ; Setup the IEEE-488 port for handling incoming data
@@ -57,7 +36,7 @@ setup_ieee:
     STA UB16_CTRL_B     ; Update control register
 
     LDA UB16_PORT_B     ; Get current port value
-    STA temp_ub16_ddr_b ; Save it
+    STA TEMP_UB16_DDR_B ; Save it
     LDA #$00            ; Inputs
     STA UB16_PORT_B     ; Write to DDR
     
@@ -71,7 +50,7 @@ setup_ieee:
     STA UB16_CTRL_A     ; Update control register
 
     LDA UB16_PORT_A     ; Get current port value
-    STA temp_ub16_ddr_a ; Save it
+    STA TEMP_UB16_DDR_A ; Save it
     LDA #$00            ; Inputs
     STA UB16_PORT_A     ; Write to DDR
     
@@ -84,7 +63,7 @@ setup_ieee:
     ; - ~DAV_OUT is UB16 CB2.
     ; - For input we want bits 5-3 to be 000
     LDA UB16_CTRL_B         ; Get current control register value
-    STA temp_ub16_ctrl_b    ; Save it
+    STA TEMP_UB16_CTRL_B    ; Save it
     AND #$C7                ; Clear bits 3, 4 and 5
     STA UB16_CTRL_B         ; Update control register
 
@@ -92,7 +71,7 @@ setup_ieee:
     ; - ~EOI_OUT is UB12 CA2.
     ; - To set to input we bits 5-3 to 000
     LDA UB12_CTRL_A         ; Get current value
-    STA temp_ub12_ctrl_a    ; Save it
+    STA TEMP_UB12_CTRL_A    ; Save it
     AND #$C7                ; Clear bits 3, 4 and 5
     STA UB12_CTRL_A         ; Update control register
 
@@ -100,7 +79,7 @@ setup_ieee:
     ; - ~NDAC_OUT is UB16 CA2.
     ; - To set to low output we want bits 5-3 to be 110
     LDA UB16_CTRL_A         ; UB16_CTRL_A ($E821)
-    STA temp_ub16_ctrl_a    ; Save it
+    STA TEMP_UB16_CTRL_A    ; Save it
     ORA #$30                ; Set bits 5/4
     AND #$F7                ; Clear bit 3
     STA UB16_CTRL_A
@@ -119,27 +98,27 @@ restore_ieee:
     ; setup_ieee for performance reasons.
     ;
     ; Also set ~ATN_OUT to high at the same time.
-    LDA temp_ub15_port_b_ddr ; Get original value
+    LDA TEMP_UB15_PORT_B_DDR ; Get original value
     STA UB15_PORT_B_DDR     ; Update DDR
-    LDA temp_ub15_port_b    ; Get original value
+    LDA TEMP_UB15_PORT_B    ; Get original value
     ORA #$06                ; Set bits PB1 and PB2
     STA UB15_PORT_B
 
     ; Set ~NDAC_OUT high
     ; - ~NDAC_OUT is UB16 CA2.
     ; - To set high output we need want bits 5-3 to 111
-    LDA temp_ub16_ctrl_a    ; Get original value
+    LDA TEMP_UB16_CTRL_A    ; Get original value
     ORA #$38                ; Set bits 5-3 to 111
     STA UB16_CTRL_A
 
     ; Restore UB12 control register A - but we don't really care what happens
     ; to ~EOI_OUT
-    LDA temp_ub12_ctrl_a    ; Get original value
+    LDA TEMP_UB12_CTRL_A    ; Get original value
     STA UB12_CTRL_A         ; Update control register
 
     ; Restore UB16 control register B - but we don't really care what happens
     ; to ~DAV_OUT
-    LDA temp_ub16_ctrl_b    ; Get original value
+    LDA TEMP_UB16_CTRL_B    ; Get original value
     STA UB16_CTRL_B         ; Update control register
 
     ; Restore DO1-8 to their previous state
@@ -148,7 +127,7 @@ restore_ieee:
     AND #$FB            ; Select DDR mode for UB16_CTRL_B - clear bit 2
     STA UB16_CTRL_B     ; Update control register
 
-    LDA temp_ub16_ddr_b ; Restore old value
+    LDA TEMP_UB16_DDR_B ; Restore old value
     STA UB16_PORT_B     ; Write to DDR
 
     PLA                 ; Get control register value
@@ -160,7 +139,7 @@ restore_ieee:
     AND #$FB            ; Select DDR mode for UB16_CTRL_A - clear bit 2
     STA UB16_CTRL_A     ; Update control register
 
-    LDA temp_ub16_ddr_a ; Restore old value
+    LDA TEMP_UB16_DDR_A ; Restore old value
     STA UB16_PORT_A     ; Write to DDR
 
     PLA                 ; Get control register value
@@ -240,7 +219,7 @@ receive_ieee_byte:
 
     ; Set up UB12 port A (EOI_IN) to read value
     LDA UB12_CTRL_A         ; Get current value
-    STA temp_receive
+    STA TEMP_RECEIVE
     ORA #$04                ; Set bit 2 for reading pins state
 
     ; Read EOI
@@ -253,14 +232,14 @@ receive_ieee_byte:
     PRINT_A CREOI           ; Show EOI as "-" (graphic char) or "@" (non-set)
 
     ; Return UB12 port A to original state
-    LDA temp_receive
+    LDA TEMP_RECEIVE
     STA UB12_CTRL_A         ; Restore UB12 port A
 
     INC_CHAR CRSTEP         ; 4
 
     ; Set up UB16 port A (data in) for read
     LDA UB16_CTRL_A         ; Get current value of control register
-    STA temp_receive        ; Save it
+    STA TEMP_RECEIVE        ; Save it
     ORA #$04                ; Set bit 2 for read mode   
     STA UB16_CTRL_A         ; Set UB16 port A to read mode
 
@@ -271,7 +250,7 @@ receive_ieee_byte:
 
     ; Now restore the port read mode to how it was - and set ~NDAC_OUT high at
     ; the same time to save us some bytes and instructions
-    LDA temp_receive
+    LDA TEMP_RECEIVE
     ORA #$38                ; Set bits 5-3 to 111 to make ~NDAC high.
     STA UB16_CTRL_A         ; Restore UB16 port A
 
@@ -299,8 +278,8 @@ receive_ieee_byte:
     STA UB16_CTRL_A
     
     ; Increment bytes processed
-    INC bytes_processed
-    LDA bytes_processed
+    INC BYTES_PROCESSED
+    LDA BYTES_PROCESSED
     STA SCREEN_RAM+CCOUNT
 
     ; Return data byte
@@ -308,7 +287,7 @@ receive_ieee_byte:
     LDA SCREEN_RAM+CREOI    ; Return EOI value as A
     RTS
 
-    ; If @end_timed_out, EOI value was stored in temp_receive
+    ; If @end_timed_out, EOI value was stored in TEMP_RECEIVE
 @end_timed_out:
     LDA SCREEN_RAM+CREOI    ; Get EOI value
     BNE @common_timed_out   ; If EOI set, branch to common timeout

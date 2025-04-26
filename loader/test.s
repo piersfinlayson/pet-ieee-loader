@@ -6,7 +6,7 @@
 
 .export do_test_routine
 
-.include "constants.inc"
+SCREEN_RAM = $8000
 
 ; Prints a string to the 2nd line on the screen
 do_test_routine:
