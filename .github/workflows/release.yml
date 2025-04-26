@@ -64,10 +64,6 @@ jobs:
       - name: Build Release Binaries
         run: |
           make sender-release
-          
-          # Prepare the release binary with proper name including arch and version
-          mkdir -p releases
-          cp sender/target/release/sender releases/sender-x86_64-linux-${{ env.TAG }}
 
       - name: Build Loader
         run: |
@@ -80,7 +76,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            releases/sender-x86_64-linux-${{ env.TAG }}
             releases/7c00-loader.prg
             releases/loader.d64
           draft: false
