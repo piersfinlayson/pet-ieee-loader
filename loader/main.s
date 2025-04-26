@@ -82,9 +82,6 @@ irq_stack:
 install_irq_handler:
     SEI                     ; Disable interrupts
 
-    JSR fix_basic           ; Allows BASIC to work again now we have a machine
-                            ; code program in memory
-
     JSR install_irq_int     ; Install our IRQ handler
 
     CLI                     ; Enable interrupts
