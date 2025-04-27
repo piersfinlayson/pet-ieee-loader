@@ -228,6 +228,8 @@ Once a BASIC program has been run, the loader is disabled until re-enabled with 
 
 Once a machine language program is executed, and assuming it returned with `RTS`, the loader is automatically re-enabled.
 
+The ROM verson uses the first cassette buffer (located at $27A) for RAM.
+
 ## 📜License
 
 Licensed under the MIT License. See LICENSE file for details.
