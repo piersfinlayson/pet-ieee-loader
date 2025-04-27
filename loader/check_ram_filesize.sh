@@ -3,6 +3,11 @@
 # check_ram_filesize.sh - Check effective file size minus trailing null bytes
 # and header
 #
+# This ensures that the PRG file produced, which is padded at the end with
+# null bytes, is not too long and hence will overwrite the area used for RAM
+# variables.  The linker config _should_ ensure this, but this is a sanity
+# check, as a problem like this live would be hard to debug.
+#
 # This script calculates the effective size of a binary file by:
 # 1. Getting the total file size
 # 2. Counting the number of trailing null bytes ($00)
