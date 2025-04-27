@@ -16,6 +16,10 @@ MAX_ROM_SIZE ?= $$1000
 RAM_LOAD_ADDR ?= $$7C00
 RAM_VAR_ADDR ?= $$7FE0
 
+# Maximum size for the program, including the 2 byte PRG header and the RAM
+# variable area.
+MAX_PRG_SIZE = $$402
+
 # Dummy address for the first 2 bytes of the PRG file, which stores the load
 # address for the RAM version of the program.
 PRG_PREFIX_ADDR ?= $$7BFE
@@ -25,6 +29,7 @@ CA65 = ca65
 LD65 = ld65
 C1541 = c1541
 CHECK_IMM = loader/check_immediate.sh
+CHECK_RAM_FILESIZE = loader/check_ram_filesize.sh
 
 # Directories
 LOADER_SRC_DIR = loader
@@ -69,9 +74,6 @@ ROM_OBJ_FILES = $(LOADER_MAIN_ROM_OBJ_FILE) $(LOADER_IEEE_ROM_OBJ_FILE)
 
 # Test file
 TEST_FILE = $(BUILD_DIR)/test.bin
-
-# Maximum size for the program, including the 2 byte PRG header
-MAX_PRG_SIZE = $$402
 
 # Disk name
 DISK_NAME = "piers.rocks"
@@ -133,6 +135,7 @@ $(LOADER_TEST_OBJ_FILE): $(LOADER_TEST_SRC_FILE) $(INC_FILES) | $(BUILD_DIR)
 # Generate the RAM config file from the template
 $(RAM_LINK_FILE): $(RAM_LINK_TEMPLATE) | $(BUILD_DIR)
 	@echo "Generating RAM linker config..."
+	@echo "RAM_VAR_ADDR = $(RAM_VAR_ADDR)"
 	@sed -e 's/$${PRG_PREFIX_ADDR}/$(PRG_PREFIX_ADDR)/g' \
 	    -e 's/$${MAX_PRG_SIZE}/$(MAX_PRG_SIZE)/g' \
 	    -e 's/$${LOAD_ADDR}/$(RAM_LOAD_ADDR)/g' \
@@ -152,6 +155,8 @@ $(RAM_PRG_FILE): $(RAM_OBJ_FILES) $(RAM_LINK_FILE) Makefile
 	@$(LD65) $(LD65_FLAGS) -m $(RAM_MAP_FILE) -C $(RAM_LINK_FILE) $(RAM_OBJ_FILES) -o $@
 	@echo "Built PRG file:"
 	@ls -l $@
+	@echo "Checking RAM file size..."
+	@$(CHECK_RAM_FILESIZE) $@ $(RAM_LOAD_ADDR) $(RAM_VAR_ADDR) $(MAX_PRG_SIZE)
 
 # Link object file to ROM binary (BIN file)
 $(ROM_BIN_FILE): $(ROM_OBJ_FILES) $(ROM_LINK_FILE) Makefile
