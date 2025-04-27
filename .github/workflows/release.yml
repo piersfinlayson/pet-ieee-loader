@@ -79,6 +79,8 @@ jobs:
         id: create_release
         uses: softprops/action-gh-release@v1
         with:
+          name: Release ${{ env.TAG }}
+          body_path: release_notes.md
           files: |
             releases/7c00-loader.prg
             releases/loader.d64
