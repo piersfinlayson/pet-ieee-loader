@@ -29,7 +29,12 @@ A lightweight utility that turns your Commodore PET into an IEEE-488 device, all
 
 ## 🔧Installation
 
-Pre-built Loader binaries are available on the [github releases](https://github.com/piersfinlayson/pet-ieee-loader/releases) page.  This allows you to skip the build process below.
+Pre-built Loader binaries are available on the [github releases](https://github.com/piersfinlayson/pet-ieee-loader/releases) page.  This allows you to skip the build process below.  The release contains the following files:
+- `7c00-loader.prg` - The PET program in PRG format, which will load to $7C00
+- `loader.d64` - A D64 disk image containing the $7C00 loader program
+- `9000-loader-rom.bin` - A 4KB ROM image, with the loader program located at $9000
+- `9000-loader-rom-1mbit.bin` - A 1MBit ROM image (with the $9000 loader repeated 32 times), with the loader program located at $9000
+- `test.bin` - A sample machine language program which can be loaded to any RAM location and executed there
 
 To build the sender program you will need Rust installed - full instructions in [💻Sender](#sender).
 
@@ -45,9 +50,11 @@ See [📚Dependencies](#dependencies) for an explanation of the required depende
 
    This creates:
     ```bash
-    loader/build/7c00-loader.prg      # The PET program in PRG format, which will load to $7C00
-    loader/build/loader.d64           # A D64 disk image containing the program 
-    loader/build/9000-loader-rom.bin  # A 4KB ROM image, with the loader program located at $9000
+    loader/build/7c00-loader.prg            # The PET loader program in PRG format, which will load to $7C00
+    loader/build/loader.d64                 # A D64 disk image containing the $7C00 loader 
+    loader/build/9000-loader-rom.bin        # A 4KB ROM image, with the loader program located at $9000
+    loader/build/9000-loader-rom-1mbit.bin  # A 128KB ROM image, with the loader program located at $9000, repeated 32 times
+    loader/build/test.bin                   # A sample machine language program which can be loaded to any RAM location and executed there
     ```
 
 2. Transfer the resulting binary (`loader/build/pet-ieee-loader.bin`) to your PET using:
