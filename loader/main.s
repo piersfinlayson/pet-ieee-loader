@@ -475,26 +475,51 @@ do_execute:
     ; Execute program
     JMP BASIC_NEWSTT        ; Start execution
 
+; Fixes BASIC pointers and relinks any BASIC program, ready to run it
+;
+; In the RAM version (where we are located at $7C00 by default), we need to 
+; modify the end of BASIC to avoid overwriting it or confusing the BASIC
+; interpreter.  We don't need to do this in the ROM version as we don't touch
+; BASIC's RAM (we use a small amount of RAM below BASIC - in the first
+; cassette buffer).
+;
+; In both RAM andd ROM versions we also need to relink the program, so that the
+; line pointers are correct.  We also need to set up the variable and array
+; pointers, to start immediately following the program, and finally initialize
+; a few state variables so BASIC is ready to run the program.
 fix_basic:
-    ; Set top of memory based on where our machine code lives
+    ; We don't need to fix the BASIC end point if we're in the ROM version.
+.ifndef ROM_VERSION
+    ; Set top of memory based on where our machine code lives, and also the
+    ; beginning of the string area which starts at the same place (and grows
+    ; downwards).
     LDA #<__LOAD_ADDR__
     STA ZP_BASIC_END
+    STA ZP_STRING_START
     LDA #>__LOAD_ADDR__
     STA ZP_BASIC_END+1
+    STA ZP_STRING_START+1
     
-    ; Fix program pointers
+    ; Fix program pointers - this probably isn't required even in the RAM
+    ; version, as we don't touch the start of BASIC, but belt and braces.
     LDA #<BASIC_START
     STA ZP_BASIC_START
     LDA #>BASIC_START
     STA ZP_BASIC_START+1
-    
-    ; Relink program
+.endif
+
+    ; Relink program.  This sets up the line pointers (to the next line) within
+    ; the program, in case they are broken - or the PRG file was created for a
+    ; different basic start location.
     JSR BASIC_LINKPRG
     
-    ; Step 4: Find end of program
+    ; Find end of program so we can set up the variable space immediately
+    ; following it.
     LDA ZP_BASIC_START
     LDY ZP_BASIC_START+1
     
+    ; Load each BASIC program line link in turn, jumping from one to the next,
+    ; until we find one which is $0000.  This is the end of the program.
 @findend:
     STA ZP_PTR          ; Store current pointer
     STY ZP_PTR+1        ; Store current pointer
@@ -509,41 +534,32 @@ fix_basic:
     CPY #$00
     BNE @findend        ; Continue if we're not at $0000
     
-    ; Set variables start after program 
+    ; Set variable and array start, and also end, after program.  The end is
+    ; the same as the start, as it will be filled up during BASIC program
+    ; execution.
     CLC
     LDA ZP_PTR
     ADC #$02            ; Skip past the link
     STA ZP_VAR_START
+    STA ZP_ARRAY_START
+    STA ZP_VAR_END
     LDA ZP_PTR+1
     ADC #$00            ; 16-bit arithmetic - includes any carry byte
     STA ZP_VAR_START+1
-    
-    ; Arrays start at same place initially
-    LDA ZP_VAR_START
-    STA ZP_ARRAY_START
-    LDA ZP_VAR_START+1
     STA ZP_ARRAY_START+1
-    
-    ; End of variables
-    LDA ZP_ARRAY_START
-    STA ZP_VAR_END
-    LDA ZP_ARRAY_START+1
     STA ZP_VAR_END+1
     
-    ; String storage starts at top of memory
-    LDA ZP_BASIC_END
-    STA ZP_STRING_START
-    LDA ZP_BASIC_END+1
-    STA ZP_STRING_START+1
-    
-    ; Step 8: Reset I/O and other flags ---
-    JSR ROM_CLALL       ; Close all I/O channels and files
+    ; Close all I/O channels and files
+    JSR ROM_CLALL
     LDA #$00
     STA ZP_ACTIVE_IO
     STA ZP_PRINT_FLAGS
     
-    ; Reset TXTPTR
-    JSR BASIC_STXPT     ; STXPT - Reset text pointer
+    ; Reset TXTPTR - essentially BASIC's instruction pointer - so BASIC is
+    ; ready to execute the program.  We need to do this as we will be launching
+    ; the program directly rather than by entering `RUN` within the BASIC
+    ; interpreter.
+    JSR BASIC_STXPT
     
     RTS
 
