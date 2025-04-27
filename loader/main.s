@@ -87,6 +87,8 @@ init_ram:
     LDA #$00
     STA BYTES_PROCESSED
 
+    RTS
+
 ; Actually install the interrupt handler
 ;
 ; Must (and can be) called with interrupts disabled
@@ -424,13 +426,13 @@ do_execute:
     ; Create code which will JSR to the address we were given, and then JMP
     ; back
     .assert EXEC_JSR_LEN = 6, error, "EXEC_JSR_LEN incorrect"
-    LDA #$6C                ; JMP (indirect)
+    LDA #$20                ; JSR
     STA EXEC_JSR
     LDA ADDRESS             ; Get low byte of address
     STA EXEC_JSR+1
     LDA ADDRESS+1           ; Get high byte of address
     STA EXEC_JSR+2
-    LDA #$4C                ; JMP (direct)
+    LDA #$4C                ; Absolute JMP
     STA EXEC_JSR+3
     LDA #<@exec_rtn         ; Get low byte of return address
     STA EXEC_JSR+4
