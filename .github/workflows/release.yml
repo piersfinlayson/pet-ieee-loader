@@ -71,6 +71,9 @@ jobs:
           mkdir -p releases
           cp loader/build/7c00-loader.prg releases/
           cp loader/build/loader.d64 releases/
+          cp loader/build/test.bin releases/
+          cp loader/build/9000-loader-rom.bin releases/
+          cp loader/build/9000-loader-rom-1mbit.bin releases/
 
       - name: Create Release
         id: create_release
@@ -79,5 +82,8 @@ jobs:
           files: |
             releases/7c00-loader.prg
             releases/loader.d64
+            releases/test.bin
+            releases/9000-loader-rom.bin
+            releases/9000-loader-rom-1mbit.bin
           draft: false
           prerelease: false

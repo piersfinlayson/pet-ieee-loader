@@ -36,6 +36,9 @@ jobs:
         mkdir -p artifacts
         cp loader/build/7c00-loader.prg artifacts/
         cp loader/build/loader.d64 artifacts/
+        cp loader/build/test.bin artifacts/
+        cp loader/build/9000-loader-rom.bin artifacts/
+        cp loader/build/9000-loader-rom-1mbit.bin artifacts/
         cp sender/target/debug/sender artifacts/sender-debug-${{ env.COMMIT_HASH }}
         cp sender/target/release/sender artifacts/sender-release-${{ env.COMMIT_HASH }}
     
