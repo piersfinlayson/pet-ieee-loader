@@ -14,7 +14,7 @@ MAX_ROM_SIZE ?= $$1000
 
 # Load address for the RAM version of the program.
 RAM_LOAD_ADDR ?= $$7C00
-RAM_VAR_ADDR ?= $$7FD0
+RAM_VAR_ADDR ?= $$7FE0
 
 # Dummy address for the first 2 bytes of the PRG file, which stores the load
 # address for the RAM version of the program.
